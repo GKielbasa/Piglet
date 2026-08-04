@@ -64,7 +64,7 @@ The test: every changed line must be derivable from the author's request.
 ## 4. Goal-driven execution
 
 Define the success criterion, then loop until it is verified. For multi-step work,
-present the plan as `step → verification`.
+present the plan as `step → definition of done` (section 5a).
 
 ## 5. Spec ownership
 
@@ -110,9 +110,31 @@ the problem to fit the tool instead of the other way round.
 
 - the core of the task (step 3),
 - the list of files to be created or changed,
-- steps in `step → verification` form,
+- steps in `step → definition of done` form (see below),
 - risks and uncertain areas,
 - an explicit **"what I am deliberately not doing"** — scope left outside on purpose.
+
+### Definition of done
+
+A step is not planned until it says how it will be proven. "Assertions green" describes
+a state; a definition of done names **the exact command** and **the output that counts
+as proof**.
+
+It is written **before** the implementation and accepted together with the assertions
+(section 5). Written afterwards, it describes what was built instead of what was asked
+for — test inversion moved up one level.
+
+The form varies with the kind of work, and saying so honestly beats inventing a check:
+
+| Kind of work | What proves it is done |
+|---|---|
+| pure logic | a run over a set of inputs, decisions printed, plus green tests |
+| I/O adapter | a real write and read — the file on disk and its contents |
+| configuration | the object printed: secrets masked, paths correct |
+| observability | the log file exists, carries the required fields, grep for a secret is empty |
+| types only (`Protocol`) | `mypy --strict` green — there is nothing to run |
+| task module | real input → result → flag |
+| documentation, ADR | **no run** — the author's review closes it, and the plan says so |
 
 ### What a plan does not contain
 
@@ -359,20 +381,22 @@ live in `.claude/hooks/`.
 
 > **A step is closed by the output of a run, never by a word.**
 
-Green gates say the code is coherent — not that it does what we agreed. That is what
-`piglet/scripts/acceptance.sh` checks: it runs the real program and inspects what an
-outsider can observe — exit codes, files created, log contents, stdout.
+Green gates say the code is coherent. They do not say it does what we agreed. Before
+reporting a step as done, **run the thing you just wrote** and paste what came back.
 
-It applies to every plan step:
-
-1. Each step adds its own section to the script, in `ASSUMPTION → EVIDENCE` form.
-2. Run **the whole script**, not just the new section — step 7 has no right to quietly
-   break step 3.
-3. **Forbidden words: "works", "done", "verified" without pasted output.** The author
+1. Execute the step's definition of done (section 5a) — the real program, real files,
+   real network where that is the point.
+2. **Paste the output.** Not a summary of it, not a claim about it.
+3. **Forbidden words: "works", "done", "verified" without that output.** The author
    looks at the result of a run, not at your assurance.
+4. If the output is wrong, fix it and run again — before writing that the step is closed.
 
-Unit tests check what you yourself wrote into the test; acceptance checks reality, which
-is why it cannot be bent to match the implementation (cf. section 5).
+Unit tests check what you yourself wrote into the test. A run checks reality, which is
+why it cannot be bent to match the implementation (cf. section 5).
+
+Collect these runs into a script only once the same checks are worth repeating — rule
+of three (section 2). A script written before there is a program to run ends up testing
+the linter configuration instead.
 
 ---
 
@@ -386,7 +410,7 @@ is why it cannot be bent to match the implementation (cf. section 5).
 6. Tooling layer: assertions → acceptance → implementation (section 5).
 7. A thin task module, a run, the flag.
 8. Quality gates.
-9. Acceptance: a new section in `scripts/acceptance.sh`, the whole script run, output pasted.
+9. Acceptance: execute the step's definition of done, paste the output (section 12).
 
 ---
 
