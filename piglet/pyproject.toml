@@ -1,0 +1,102 @@
+[project]
+name = "piglet"
+version = "0.1.0"
+description = "Universal agent tooling built alongside the AI_devs course."
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
+    "structlog>=26.1.0",
+    "typer>=0.27.1",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/piglet"]
+
+# ---------------------------------------------------------------------------
+# ruff — mechanical enforcement of CLAUDE.md. Section numbers refer to that file.
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort — import ordering
+    "N",        # pep8-naming             -> section 9
+    "D",        # pydocstyle              -> section 10
+    "UP",       # pyupgrade; UP046/UP047  -> section 8 (PEP 695 over TypeVar)
+    "ANN",      # flake8-annotations      -> section 8 (full typing)
+    "S",        # flake8-bandit           -> section 11 (no secrets in code)
+    "BLE",      # flake8-blind-except     -> section 11 (no bare `except Exception`)
+    "T20",      # flake8-print            -> section 11 (logic never prints)
+    "TID",      # flake8-tidy-imports     -> section 9 (absolute imports only)
+    "PL",       # pylint; PLR0913         -> section 7 (constructor arity)
+    "C90",      # mccabe complexity       -> section 2 (simplicity)
+    "SIM",      # flake8-simplify         -> section 2
+    "B",        # flake8-bugbear
+    "A",        # flake8-builtins
+    "C4",       # flake8-comprehensions
+    "PTH",      # flake8-use-pathlib
+    "ASYNC",    # flake8-async
+    "RUF",      # ruff-specific
+]
+ignore = [
+    # Section 10 requires docstrings on *public* API; these fire on private and
+    # magic methods where the rule would only add noise.
+    "D105",  # undocumented magic method
+    "D107",  # undocumented __init__ (the class docstring covers it)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"  # section 10
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"  # section 9
+
+[tool.ruff.lint.pylint]
+# Section 7: "a constructor with 7+ parameters means the class does too much".
+max-args = 6
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, use magic numbers as fixtures, and their names document intent
+# better than a docstring would.
+"tests/**" = ["S101", "D103", "PLR2004", "ANN201"]
+
+# ---------------------------------------------------------------------------
+# mypy — section 8: the project's `tsc --strict`.
+# ---------------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.12"
+# `tests` joins this list in plan step 2, together with the first test file:
+# mypy exits non-zero on a directory holding no .py files.
+files = ["src"]
+strict = true
+warn_unreachable = true
+# `disallow_any_explicit` is deliberately NOT set: section 8 permits `dict[str, Any]`
+# inside a single function, between deserialization and building a model.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -1,0 +1,26 @@
+# Materiały kursu — nie trafiają do repo (projekt idzie na publicznego GitHuba).
+# Zostają na dysku i są czytelne dla agenta; git ich po prostu nie widzi.
+_teoria/
+_exampleCode/
+
+piglet/docs
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+piglet/data/
+
+CLAUDE.md
+.claude
