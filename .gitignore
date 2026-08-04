@@ -22,5 +22,7 @@ dist/
 *.egg-info/
 piglet/data/
 
-CLAUDE.md
-.claude
+
+# .claude/ jest wersjonowane — hooki i skille to część infrastruktury projektu.
+# Ignorujemy tylko stan przejściowy: marker między hookiem PostToolUse a Stop.
+.claude/.quality-pending

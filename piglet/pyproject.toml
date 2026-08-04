@@ -81,7 +81,7 @@ max-complexity = 10
 [tool.ruff.lint.per-file-ignores]
 # Tests assert, use magic numbers as fixtures, and their names document intent
 # better than a docstring would.
-"tests/**" = ["S101", "D103", "PLR2004", "ANN201"]
+"tests/**" = ["S101", "D100", "D103", "D104", "PLR2004", "ANN201"]
 
 # ---------------------------------------------------------------------------
 # mypy — section 8: the project's `tsc --strict`.
