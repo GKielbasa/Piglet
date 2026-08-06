@@ -1,0 +1,13 @@
+{
+    "include": [
+        "piglet/src",
+        "piglet/tests"
+    ],
+    "extraPaths": [
+        "piglet/src"
+    ],
+    "venvPath": "piglet",
+    "venv": ".venv",
+    "pythonVersion": "3.12",
+    "typeCheckingMode": "strict"
+}
