@@ -54,6 +54,7 @@ $out
 run_gate "ruff format" ruff format --check .
 run_gate "ruff check" ruff check .
 run_gate "mypy --strict" mypy
+run_gate "basedpyright (strict)" basedpyright --project "$ROOT"
 run_gate "pytest" pytest -q
 
 if [ -n "$failures" ]; then

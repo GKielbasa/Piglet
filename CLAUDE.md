@@ -294,6 +294,12 @@ delay = base_delay * 2**attempt + random.uniform(0, 1)
 A justified WHY comment covers: a workaround for someone else's bug, a non-obvious
 algorithmic choice, a requirement of an external API, a deliberate trade-off.
 
+**It does not cover a change made to satisfy a linter or a type checker.** A convention
+that holds project-wide is written down once — in this file or in an ADR — and the code
+does not repeat it. `field(default_factory=dict[str, str])` gets no comment explaining the
+type parameters; the rule lives in section 12 and the author should not have to delete the
+same explanation from every file that follows it.
+
 ### Docstrings — Google style
 
 A docstring for every public class, method and function. A simple function — one line.
@@ -344,7 +350,8 @@ The decisions are made; the reasoning lives in `docs/adr/`.
 | Validation / DTO | **pydantic** v2 | process boundaries |
 | Logging | **structlog** | logs as data (JSONL), not text — for evaluations from S03E01 |
 | Lint / format | **ruff** | `line-length = 120` |
-| Types | **mypy --strict** | |
+| Types — contract | **mypy --strict** | the authority; `pyproject.toml` |
+| Types — second opinion | **basedpyright**, `strict` | the editor's checker, run by the gates too; `pyrightconfig.json` at the repo root |
 | Tests | **pytest** | |
 | HTTP API | **FastAPI** | deferred; arrives with a UI or at S03E03 |
 
@@ -364,18 +371,39 @@ The rule that keeps FastAPI cheap: **logic never reads `sys.argv` and never call
 ## 12. Quality gates
 
 ```bash
-uv run ruff format .        # formatting
-uv run ruff check --fix .   # lint
-uv run mypy                 # types, strict
-uv run pytest -q            # tests
+uv run ruff format .                            # formatting
+uv run ruff check --fix .                       # lint
+uv run mypy                                     # types, strict
+uv run basedpyright --project "$(git rev-parse --show-toplevel)"   # types, second checker
+uv run pytest -q                                # tests
 ```
 
-All four must be green before you report a task as done. Do not argue with the linter —
-the configuration lives in `pyproject.toml`.
+All five must be green before you report a task as done. Do not argue with the linter or
+with either type checker — the configuration lives in `pyproject.toml` and
+`pyrightconfig.json`.
 
-The gates are automated and **cannot be skipped**: a `PostToolUse` hook runs ruff and mypy
-after every `.py` write, and a `Stop` hook runs all four when a turn tries to end. Both
-live in `.claude/hooks/`.
+The gates are automated and **cannot be skipped**: a `PostToolUse` hook runs ruff, mypy and
+basedpyright after every `.py` write — plus greps for section 9 names, the section 6
+universality test, and a test that has been skipped or emptied of assertions (section 5) — and a
+`Stop` hook runs all five when a turn tries to end. Both live in `.claude/hooks/`, alongside two
+hooks that serve the subagents of section 13: one confining a read-only agent's writes, one
+telling the compactor what must survive.
+
+### Two type checkers, one rule
+
+They disagree, and the disagreement is settled once, here — do not reopen it per session:
+
+1. **A finding from either checker is fixed in the code**, not silenced. `# type: ignore`
+   and `# pyright: ignore` need a WHY comment and are a last resort.
+2. **When they conflict, mypy is the contract** and basedpyright bends: its rule goes into
+   `pyrightconfig.json` with a reason, never a scattered inline ignore.
+3. **basedpyright runs in `strict`, not `recommended` or `all`.** The stricter modes add
+   style opinions (`reportUnannotatedClassAttribute`, `reportUnusedCallResult`,
+   `reportAny`) that contradict sections 7–10 of this file. Reasoning in ADR 0003.
+4. One known consequence, deliberate: a dataclass factory is spelled with its type
+   parameters — `field(default_factory=dict[str, str])`, never a bare `dict`. A single
+   `# type: ignore[...]` still serves both checkers, because pyright honours it in
+   `strict`.
 
 ### Acceptance — evidence, not assertion
 
@@ -411,6 +439,28 @@ the linter configuration instead.
 7. A thin task module, a run, the flag.
 8. Quality gates.
 9. Acceptance: execute the step's definition of done, paste the output (section 12).
+
+### The subagents, and what they are for
+
+Three of them live in `.claude/agents/`. They exist to keep step 5 — the plan, and the author's
+understanding of it — in the main context, while the work that only consumes context happens
+elsewhere. None of them decides anything.
+
+| Agent | Where in the workflow | Produces |
+|---|---|---|
+| `assertion-drafter` | step 6, **before** any code | the assertion list, as text, for the author to accept |
+| `coder` | step 6, after acceptance | code, one assertion at a time, red → green |
+| `reviewer` | between steps 8 and 9 | findings against this file, and a verdict |
+
+The order is the point. In ordinary test-first work the person writing the test is the person who
+wants the behaviour; here they are not the same, which is what section 5 is about. So the
+assertions are accepted by the author before a coder exists, and the reviewer — which
+cannot write to the code it is judging — checks afterwards that every accepted assertion actually
+became a test.
+
+They write their reports to `.piglet-work/`, which is gitignored: working notes for one step. What
+deserves to outlive the step goes to `docs/` or an ADR, deliberately, and never by accumulating
+there.
 
 ---
 

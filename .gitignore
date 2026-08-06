@@ -3,7 +3,6 @@
 _teoria/
 _exampleCode/
 
-piglet/docs
 .env
 .env.*
 !.env.example
@@ -26,3 +25,8 @@ piglet/data/
 # .claude/ jest wersjonowane — hooki i skille to część infrastruktury projektu.
 # Ignorujemy tylko stan przejściowy: marker między hookiem PostToolUse a Stop.
 .claude/.quality-pending
+
+# Subagent reports — reviews, drafted assertions, implementation summaries.
+# Working notes for one step, not a record of the project: what survives a step
+# belongs in docs/ or in an ADR, deliberately, not by accumulating here.
+.piglet-work/

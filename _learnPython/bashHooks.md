@@ -3,7 +3,9 @@
 > **Zasada jednym zdaniem:** hook to zwykły skrypt, który harness uruchamia sam
 > w wybranym momencie. Cała „magia" to kontrakt: JSON na stdin, kod wyjścia na wyjściu.
 
-Dotyczy `.claude/hooks/python-quality.sh` i `.claude/hooks/quality-gate.sh`.
+Dotyczy czterech skryptów w `.claude/hooks/`: `python-quality.sh` i `quality-gate.sh`
+(bramki jakości, sekcje 1–12), oraz `write-scope.sh` i `compaction-priorities.sh`
+(obsługa subagentów, sekcje 13–15).
 
 ---
 
@@ -13,7 +15,7 @@ Dotyczy `.claude/hooks/python-quality.sh` i `.claude/hooks/quality-gate.sh`.
 |---|---|---|
 | Kiedy | po każdym zapisie `.py` | przy próbie zakończenia tury |
 | Zakres | **jeden plik** | **cały projekt** |
-| Sprawdza | ruff (z poprawką), mypy, grep §9, grep §6 | ruff, mypy, **pytest** |
+| Sprawdza | ruff (z poprawką), mypy, grep §9, grep §6, grep §5 | ruff, mypy, **pytest** |
 | Czas | ~0,2 s | ~0,4 s |
 
 Ruff i mypy powtarzają się celowo. Pierwszy daje poprawkę **w tej samej turze**,
@@ -209,7 +211,137 @@ zachowuje argumenty ze spacjami jako osobne; `$@` bez cudzysłowów by je rozbi�
 stanem oczekiwanym, dopóki nie ma pierwszego testu. Bez tego wyjątku hook blokowałby
 każdą turę.
 
-## 13. Ściąga konstrukcji
+## 13. Grep §5 — integralność testów
+
+Trzeci grep w `python-quality.sh`, obok §9 i §6. Łapie dwie sztuczki, którymi test
+przestaje być testem, a bramka dalej świeci na zielono:
+
+```bash
+case "$rel" in
+    tests/*)
+        if skips=$(grep -nE '@pytest\.mark\.(skip|xfail)|pytest\.skip\(' "$file"); then
+        ...
+        if grep -qE '^[[:space:]]*(async[[:space:]]+)?def test_' "$file" \
+            && ! grep -qE '^[[:space:]]*assert\b|pytest\.raises' "$file"; then
+```
+
+Drugi warunek to idiom **„definiuje testy, ale nic nie asertuje"**: `grep -q A && ! grep -q B`.
+`-q` nie wypisuje nic, liczy się tylko kod wyjścia, więc oba `grep`i działają tu jak
+predykaty logiczne.
+
+### Dlaczego stan pliku, a nie diff
+
+Można było porównywać `old_string` z `new_string` z payloadu — tak robi to rozwiązanie,
+z którego brałem pomysł. Odpuściłem, bo:
+
+| Podejście | Łapie | Nie łapie |
+|---|---|---|
+| diff (`old` vs `new`) | asercje **usunięte tą edycją** | pliku, który powstał od razu pusty |
+| stan pliku po edycji | **każdy** wypatroszony test, niezależnie od drogi | — |
+
+Koszt: plik, który miał `skip` już wcześniej, przypomina o sobie przy każdej edycji.
+To akceptowalne — `skip` w tym projekcie ma być zdarzeniem, nie tłem.
+
+### Pułapka: `assert` w Pythonie nie ma nawiasu
+
+Oryginał, na którym się wzorowałem, liczył asercje wyrażeniem `assert\w*\s*\(` — czyli
+wymagał nawiasu po słowie. To działa dla JS (`expect(...)`) i C# (`Assert.True(...)`),
+ale **w Pythonie `assert x == y` to instrukcja, nie wywołanie**. Sprawdziłem na żywym
+teście: regex nie złapał ani jednej prawdziwej asercji, za to trafił przypadkiem
+w nazwę metody `should_retry(`. Cichy fałszywy spokój — najgorszy rodzaj.
+
+Stąd `^[[:space:]]*assert\b`: zakotwiczone na początku linii (po wcięciu), bez nawiasu.
+
+## 14. `write-scope.sh` — hook podpięty z frontmattera agenta
+
+Do tej pory hooki żyły w `.claude/settings.json` i obowiązywały **zawsze**. Ten jest inny:
+deklaruje go subagent w swoim własnym frontmatterze, więc reguła obowiązuje **tylko
+dopóki ten agent działa**.
+
+```yaml
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write|NotebookEdit"
+      hooks:
+        - type: command
+          command: $CLAUDE_PROJECT_DIR/.claude/hooks/write-scope.sh ".piglet-work/" "The reviewer"
+```
+
+| | hook z `settings.json` | hook z frontmattera agenta |
+|---|---|---|
+| Zasięg | cała sesja | jeden agent |
+| Po co | reguły projektu | rola agenta (np. reviewer nie pisze kodu) |
+
+`matcher` dopasowuje **nazwy narzędzi**, nigdy ścieżki. Decyzja o ścieżce zapada
+w skrypcie — dlatego `Edit|Write|NotebookEdit` łapie wszystkie trzy, a dopiero bash
+sprawdza, dokąd ten zapis leci.
+
+### Argumenty i normalizacja ścieżki
+
+```bash
+allowed="${1:?allowed prefix required}"
+role="${2:-This agent}"
+```
+
+| Konstrukcja | Zachowanie przy braku argumentu |
+|---|---|
+| `${1:?komunikat}` | **przerywa skrypt** z tym komunikatem — argument obowiązkowy |
+| `${2:-domyślna}` | podstawia wartość domyślną — argument opcjonalny |
+
+Ścieżka z payloadu przychodzi raz bezwzględna, raz względna, więc sprowadzam ją do
+jednej postaci przed porównaniem:
+
+```bash
+case "$file" in
+    /*) rel="${file#"$ROOT"/}" ;;
+    *)  rel="$file" ;;
+esac
+```
+
+`/*` to wzorzec `case`, nie regex — „zaczyna się od ukośnika".
+
+## 15. `compaction-priorities.sh` — `PreCompact` ma inny kontrakt
+
+Tu tabela z sekcji 2 przestaje obowiązywać i to jest cała lekcja tego skryptu.
+
+| | bramki (`PostToolUse`, `Stop`) | `PreCompact` |
+|---|---|---|
+| Jak przekazuje wynik | `exit 2` + stderr | **JSON na stdout**, `exit 0` |
+| stdout | ignorowany | **jedyny kanał** |
+| Co robi | blokuje | dokłada tekst do promptu kompaktowania |
+
+Czyli: `>&2` i `exit 2`, na których stoją tamte hooki, tutaj nie zrobiłyby nic.
+
+### Heredoc do zmiennej
+
+```bash
+read -r -d '' PRIORITIES <<'EOF'
+...tekst wielolinijkowy...
+EOF
+```
+
+| Element | Po co |
+|---|---|
+| `-r` | backslash zostaje znakiem, nie ucieczką |
+| `-d ''` | czytaj **do końca**, a nie do pierwszego `\n` |
+| `<<'EOF'` | apostrofy wokół `EOF` = **brak podstawień** `$` w treści |
+
+Pułapka: `read -d ''` kończy się kodem **niezerowym** (doszedł do EOF, nie do
+separatora). Pod `set -e` ubiłoby to skrypt w tym miejscu. Tutaj przechodzi, bo —
+jak w sekcji 3 — `-e` świadomie nie ma.
+
+### JSON składany `jq`, nie `printf`
+
+```bash
+jq -n --arg ctx "$PRIORITIES" \
+    '{hookSpecificOutput: {hookEventName: "PreCompact", additionalContext: $ctx}}'
+```
+
+`-n` znaczy „nie czytaj wejścia, zbuduj od zera". `--arg` wstawia zmienną **jako
+poprawnie zakodowany string** — sam ucieka cudzysłowy i zamienia znaki nowej linii
+na `\n`. Ręczne sklejanie tego `printf`em wywraca się na pierwszym apostrofie w treści.
+
+## 16. Ściąga konstrukcji
 
 | Konstrukcja | Znaczenie |
 |---|---|
@@ -223,3 +355,8 @@ każdą turę.
 | `[ -z "$x" ]` / `[ -n "$x" ]` | łańcuch pusty / niepusty |
 | `[ -f "$x" ]` | plik istnieje |
 | `>&2` | pisz na stderr |
+| `${x:?komunikat}` | argument obowiązkowy — brak przerywa skrypt |
+| `grep -q` | predykat: sam kod wyjścia, bez wypisywania |
+| `read -r -d '' V <<'EOF'` | heredoc do zmiennej, bez podstawień |
+| `jq -n --arg k "$v"` | zbuduj JSON od zera, bezpiecznie kodując `$v` |
+| `case $x in /*)` | wzorzec globa, **nie** regex |

@@ -52,6 +52,16 @@ $mypy_out
 "
 fi
 
+# Second type checker, run here so the agent never hands back code that lights up in
+# the author's editor. Its config lives at the repo root, not in piglet/, because the
+# editor workspace is the repo: hence the explicit --project.
+if ! pyright_out=$(uv run basedpyright --project "$ROOT" "$file" 2>&1); then
+    problems+="--- basedpyright (strict) ---
+$pyright_out
+
+"
+fi
+
 # --- 2. Section 9: banned identifiers ----------------------------------------
 # Word-anchored so `process_batch` and `metadata` do not trigger; only an
 # identifier that *is* the banned word counts.
@@ -88,6 +98,38 @@ case "$rel" in
 $rel belongs to the generic layer, but names the course domain.
 Tools do not know AI_devs exists.
 $leak
+
+"
+        fi
+        ;;
+esac
+
+# --- 4. Section 5: test integrity ---------------------------------------------
+# Section 5 protects the specification while it is being written: assertions are
+# accepted by the author before any implementation exists. Nothing protected it
+# afterwards. These two checks do — they are the cheapest moment to catch a test
+# quietly bent to fit the code it was supposed to judge.
+
+case "$rel" in
+    tests/*)
+        if skips=$(grep -nE '@pytest\.mark\.(skip|xfail)|pytest\.skip\(' "$file"); then
+            problems+="--- CLAUDE.md section 5: a test that cannot fail ---
+A skipped or expected-to-fail test asserts nothing while still counting as green.
+If this is deliberate, it is the author's call and belongs in the conversation,
+not in a file. Remove it, or leave the test failing and say why.
+$skips
+
+"
+        fi
+
+        # Counted on the file as it now stands rather than on the diff: the trick
+        # this catches is a test that ends up vacuous, however it got there.
+        if grep -qE '^[[:space:]]*(async[[:space:]]+)?def test_' "$file" \
+            && ! grep -qE '^[[:space:]]*assert\b|pytest\.raises' "$file"; then
+            problems+="--- CLAUDE.md section 5: test without an assertion ---
+$rel defines tests but asserts nothing. A test that cannot fail passes forever
+and proves nothing — it is worse than an absent test, because the gates now
+lean on it. Assert the behaviour, or delete the test and report the gap.
 
 "
         fi
