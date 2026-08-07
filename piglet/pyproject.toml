@@ -13,11 +13,16 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.39.9",
+    "hypothesis>=6.165.2",
     "mypy>=2.3.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.1",
 ]
+
+[project.scripts]
+piglet = "piglet.app.cli:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -80,8 +85,9 @@ max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
 # Tests assert, use magic numbers as fixtures, and their names document intent
-# better than a docstring would.
-"tests/**" = ["S101", "D100", "D103", "D104", "PLR2004", "ANN201"]
+# better than a docstring would. D102: a test double's methods repeat a docstring
+# that already lives on the port they stand in for.
+"tests/**" = ["S101", "D100", "D102", "D103", "D104", "PLR2004", "ANN201"]
 
 # ---------------------------------------------------------------------------
 # mypy — section 8: the project's `tsc --strict`.
@@ -89,9 +95,7 @@ max-complexity = 10
 
 [tool.mypy]
 python_version = "3.12"
-# `tests` joins this list in plan step 2, together with the first test file:
-# mypy exits non-zero on a directory holding no .py files.
-files = ["src"]
+files = ["src", "tests"]
 strict = true
 warn_unreachable = true
 # `disallow_any_explicit` is deliberately NOT set: section 8 permits `dict[str, Any]`
