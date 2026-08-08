@@ -17,6 +17,16 @@ class HTTPMethod(StrEnum):
     DELETE = "DELETE"
     HEAD = "HEAD"
 
+    @property
+    def is_idempotent(self) -> bool:
+        """Whether sending this verb twice is defined to mean the same as sending it once."""
+        return self in _IDEMPOTENT_METHODS
+
+
+# RFC 9110 §9.2.2: nothing outside this set may be repeated automatically, because the
+# server may have processed the first request and died before it could answer.
+_IDEMPOTENT_METHODS = frozenset({HTTPMethod.GET, HTTPMethod.HEAD, HTTPMethod.PUT, HTTPMethod.DELETE})
+
 
 @dataclass(frozen=True, slots=True)
 class HTTPRequest:
@@ -42,5 +52,6 @@ class HTTPRequest:
         if not self.url.strip():
             raise ValueError("url must not be empty")
         # Annotations vanish at runtime, so a verb arriving from a file or from
-        # configuration would otherwise reach the socket unchecked.
-        HTTPMethod(self.method)
+        # configuration would otherwise reach the socket unchecked — and, still a plain
+        # string, would have no `is_idempotent` for the retry policy to ask about.
+        object.__setattr__(self, "method", HTTPMethod(self.method))

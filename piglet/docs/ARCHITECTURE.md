@@ -9,7 +9,8 @@
 with functions bolted on. The order matters: the S01 tasks are pipelines, not agents. The
 agent loop with a tool registry arrives when a task demands one, not in advance.
 
-The decisions behind the current shape are in [`adr/0002-resilient-http-client.md`](adr/0002-resilient-http-client.md);
+The decisions behind the current shape are in [`adr/0002-resilient-http-client.md`](adr/0002-resilient-http-client.md)
+and [`adr/0004-failure-class-and-service-profile.md`](adr/0004-failure-class-and-service-profile.md), which refines it;
 the ones behind the project as a whole in [`adr/0001-fundamenty-projektu.md`](adr/0001-fundamenty-projektu.md).
 
 ## Layers
@@ -33,13 +34,14 @@ neither will be created before its first line of real code.
 
 | Module | Role |
 |---|---|
-| `errors.py` | `PigletError` and its three descendants: transport, HTTP status, retries exhausted |
+| `errors.py` | `PigletError` and its four descendants: transport, HTTP status, retries exhausted, refused as unsafe to repeat |
 | `domain/http/request.py` | `HTTPRequest`, `HTTPMethod` — an immutable request, validated on construction |
 | `domain/http/response.py` | `HTTPResponse` — status, headers, raw bytes, case-insensitive header lookup |
-| `domain/http/retry_policy.py` | `RetryPolicy` — retry or not, and how long to wait. Pure: no I/O, no sleeping |
+| `domain/http/retry_policy.py` | `RetryPolicy` — retry or not, how long to wait, and why we stopped. Pure: no I/O, no sleeping |
+| `domain/http/service_profile.py` | `ServiceProfile`, `FailureClass` — what a failure means *here*. The one file rewritten per integration |
 | `domain/http/cache_key.py` | `compute_cache_key` — request identity, credentials deliberately excluded |
 | `domain/ports.py` | `HTTPTransport`, `ResponseCache`, `Sleeper` — structural contracts |
-| `adapters/http/httpx_transport.py` | the wire; httpx exceptions stop here and become `TransportError` |
+| `adapters/http/httpx_transport.py` | the wire; httpx exceptions stop here, become `TransportError` and are classified |
 | `adapters/http/resilient_client.py` | retries, cache lookup, one log entry per attempt |
 | `adapters/cache/filesystem_cache.py` | one JSON document per key, body base64, TTL, damaged file = miss |
 | `adapters/logging/setup.py` | structlog to JSONL, `run_id` in context, known secrets scrubbed |

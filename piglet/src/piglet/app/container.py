@@ -15,6 +15,7 @@ from piglet.adapters.http.resilient_client import ResilientHTTPClient
 from piglet.adapters.logging.setup import bind_run_id, configure_logging
 from piglet.app.config import Settings
 from piglet.domain.http.retry_policy import RetryPolicy
+from piglet.domain.http.service_profile import ServiceProfile
 
 __all__ = ["build_http_client", "start_run"]
 
@@ -32,11 +33,14 @@ def start_run(settings: Settings) -> str:
     return bind_run_id()
 
 
-def build_http_client(settings: Settings) -> ResilientHTTPClient:
+def build_http_client(settings: Settings, profile: ServiceProfile | None = None) -> ResilientHTTPClient:
     """Assemble the HTTP client described by the configuration.
 
     Args:
         settings: Timeouts, retry budget and cache switches.
+        profile: What this service's statuses mean. None takes the standard set, which
+            is right until a service disagrees; one integration then passes its own here
+            rather than editing anything.
 
     Returns:
         A client to be used as an async context manager, so its connection pool is
@@ -45,4 +49,4 @@ def build_http_client(settings: Settings) -> ResilientHTTPClient:
     transport = HttpxTransport(httpx.AsyncClient(timeout=settings.http_timeout_seconds))
     cache = FilesystemResponseCache(settings.cache_dir, settings.cache_ttl_seconds) if settings.cache_enabled else None
     retry_policy = RetryPolicy(max_attempts=settings.retry_max_attempts)
-    return ResilientHTTPClient(transport, retry_policy, asyncio.sleep, cache)
+    return ResilientHTTPClient(transport, retry_policy, profile or ServiceProfile(), asyncio.sleep, cache)

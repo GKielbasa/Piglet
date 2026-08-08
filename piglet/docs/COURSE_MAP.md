@@ -1,67 +1,79 @@
-# Mapa kursu AI_devs 4 → moduły `piglet`
+# Course map: AI_devs 4 → `piglet` modules
 
-Żywy dokument. Po każdej lekcji uzupełniamy kolumnę „moduł" i status.
+A living document. After each lesson, fill in the module and the status.
 
-Legenda statusu: `—` nie zaczęte · `WIP` w toku · `✓` zrobione
+**Module names come from [`ARCHITECTURE.md`](ARCHITECTURE.md)**, which is the authority. A name
+here that does not appear there is a name nobody has built. `✓` after a module means it exists on
+disk today; the Status column is about the *lesson*, not the module.
 
-## Sezon 1 — fundamenty
+Status: `—` not started · `WIP` in progress · `✓` done
 
-| Lekcja | Zdolności techniczne | Moduł | Zadanie | Status |
+## Season 1 — foundations
+
+| Lesson | Technical capabilities | Module | Task | Status |
 |---|---|---|---|---|
-| S01E01 | structured outputs / JSON Schema, dobór modeli, organizacja instrukcji w kodzie, few/many-shot | `llm/`, `hub/`, `core/http` | **people** — CSV → filtr → klasyfikacja tagów → `/verify` | — |
-| S01E02 | function calling, schematy narzędzi, walidacja i zabezpieczenia, workflow vs agent, transformacja zapytań, dynamiczne listy narzędzi, prompt injection | `tools/`, `agent/` | **findhim** — orkiestracja `/api/location` + `/api/accesslevel`, dopasowanie geo do elektrowni | — |
-| S01E03 | threat modeling, least privilege, dry-run + HITL, audit trail, zarządzanie sekretami | `config`, `core/trace`, `hub` (dry_run) | ⚠️ **brak pliku lekcji w `teoria/`** — jest tylko transkrypcja wideo | — |
-| S01E04 | vision, PDF, audio, wideo, generowanie i edycja obrazów | `llm/` (multimodal), `core/http` | **sendit** — crawl dokumentacji markdown + vision na grafikach + sztywny szablon deklaracji | — |
-| S01E05 | limity jawne i niejawne, rate limity, retry na 503, środowisko produkcyjne | `core/http` (retry/backoff), `core/cache` | **railway** — samodokumentujące API, aktywacja trasy X-01 pod ostrymi limitami | — |
+| S01E01 | structured outputs / JSON Schema, choosing a model, organising instructions in code, few/many-shot | `llm/`, `application/`, `adapters/http/` ✓ | **people** — CSV → filter → tag classification → `/verify` | — |
+| S01E02 | function calling, tool schemas, validation and guardrails, workflow vs agent, query transformation, dynamic tool lists, prompt injection | `tools/`, `agent/` | **findhim** — orchestrating `/api/location` and `/api/accesslevel`, matching geography to the site | — |
+| S01E03 | threat modeling, least privilege, dry run + HITL, audit trail, secrets management | `app/config.py` ✓, `adapters/logging/` ✓, `application/` (dry run) | ⚠️ **no lesson file in `_teoria/`** — a video transcript only | — |
+| S01E04 | vision, PDF, audio, video, generating and editing images | `llm/` (multimodal), `adapters/http/` ✓ | **sendit** — crawl the markdown documentation, vision over its images, a rigid declaration template | — |
+| S01E05 | explicit and implicit limits, rate limits, retry on 503, running against production | `adapters/http/` ✓ (retry, backoff), `adapters/cache/` ✓ | **railway** — a self-documenting API, activating route X-01 under hard limits | — |
 
-## Sezon 2 — kontekst i agenty
+## Season 2 — context and agents
 
-| Lekcja | Zdolności techniczne | Moduł | Status |
+| Lesson | Technical capabilities | Module | Status |
 |---|---|---|---|
-| S02E01 | dynamiczna instrukcja systemowa, stan poza oknem kontekstu, maskowanie kontekstu, planowanie i monitorowanie postępów | `agent/context` | — |
-| S02E02 | indeksowanie, bazy wektorowe, wyszukiwanie semantyczne, retrieval, RAG | `rag/` | — |
-| S02E03 | baza wiedzy jako narzędzie, kategoryzacja, mapa zasobów, grafy, długie formy | `rag/`, `memory/` | — |
-| S02E04 | wielowątkowość, globalny kontekst, podział narzędzi między agentów, manager | `agent/` (multi) | — |
-| S02E05 | projektowanie agenta: instrukcja, zakres odpowiedzialności, zestaw narzędzi, przypisana wiedza | `agent/` | — |
+| S02E01 | dynamic system instruction, state outside the context window, context masking, planning and tracking progress | `agent/` (context) | — |
+| S02E02 | indexing, vector stores, semantic search, retrieval, RAG | `rag/` | — |
+| S02E03 | a knowledge base as a tool, categorisation, resource maps, graphs, long forms | `rag/`, `memory/` | — |
+| S02E04 | concurrency, global context, dividing tools between agents, a manager | `agent/` (multi) | — |
+| S02E05 | designing an agent: instruction, scope of responsibility, tool set, assigned knowledge | `agent/` | — |
 
-## Sezon 3 — obserwowalność i ograniczenia
+## Season 3 — observability and limits
 
-| Lekcja | Zdolności techniczne | Moduł | Status |
+| Lesson | Technical capabilities | Module | Status |
 |---|---|---|---|
-| S03E01 | tracing, odtwarzanie stanu, wersjonowanie promptów, metryki, ewaluacja | `eval/` (czyta `core/trace`) | — |
-| S03E02 | kontrola trudności zadania, mitygacja prompt injection, halucynacje | `agent/guards` | — |
-| S03E03 | feedback ze środowiska, przestrzeń między wywołaniami narzędzi, HITL | `agent/`, `api/` | — |
-| S03E04 | zestawy danych testowych, ensemble modeli, autooptymalizacja schematów | `eval/`, `llm/registry` | — |
-| S03E05 | sterowanie rozumowaniem, elastyczne formy prezentacji, generatywne UI | `llm/`, `api/` | — |
+| S03E01 | tracing, replaying state, prompt versioning, metrics, evaluation | `eval/`, reading what `adapters/logging/` ✓ already writes | — |
+| S03E02 | controlling task difficulty, mitigating prompt injection, hallucinations | `agent/` (guards) | — |
+| S03E03 | feedback from the environment, the space between tool calls, HITL | `agent/`, `api/` | — |
+| S03E04 | test data sets, model ensembles, self-optimising schemas | `eval/`, `llm/` (registry) | — |
+| S03E05 | steering reasoning, flexible presentation, generative UI | `llm/`, `api/` | — |
 
-## Sezon 4 — wdrożenia i współpraca
+## Season 4 — deployment and collaboration
 
-| Lekcja | Zdolności techniczne | Moduł | Status |
+| Lesson | Technical capabilities | Module | Status |
 |---|---|---|---|
-| S04E01 | wdrożenia, współpraca synchroniczna i asynchroniczna, mapowanie procesów | — | — |
-| S04E02 | interfejs czatu, personalizacja, meta-prompty | `api/`, `agent/` | — |
-| S04E03 | zadania w tle, zarządzanie zdarzeniami i komunikacją | `api/` (background), `core/queue` | — |
-| S04E04 | własna baza wiedzy w markdown, pamięć długoterminowa vs baza wiedzy | `memory/` | — |
-| S04E05 | rozwiązania wewnątrzfirmowe, prywatność, odczyt SQLite, API zamówień | `tools/sqlite` | — |
+| S04E01 | deployment, synchronous and asynchronous collaboration, mapping processes | — | — |
+| S04E02 | a chat interface, personalisation, meta-prompts | `api/`, `agent/` | — |
+| S04E03 | background work, managing events and messaging | `api/` (background); no module decided yet | — |
+| S04E04 | a knowledge base of your own in markdown, long-term memory vs a knowledge base | `memory/` | — |
+| S04E05 | in-house solutions, privacy, reading SQLite, an orders API | `tools/` (sqlite) | — |
 
-## Sezon 5 — produkcja
+## Season 5 — production
 
-| Lekcja | Zdolności techniczne | Moduł | Status |
+| Lesson | Technical capabilities | Module | Status |
 |---|---|---|---|
-| S05E01 | architektura czatbotów i agentów, integracje z providerami | `llm/registry`, `api/` | — |
-| S05E02 | interfejs użytkownika, narzędzia dla agentów, silniki wyszukiwania i bazy wektorowe | `tools/`, `rag/` | — |
-| S05E03 | migracje modeli i zmian API, zarządzanie rozwojem agenta | `llm/registry`, ADR | — |
-| S05E04 | doświadczenia produkcyjne | całość | — |
-| S05E05 | własny asystent — konfiguracja, narzędzia, współpraca, rozwój | całość | — |
+| S05E01 | chatbot and agent architecture, provider integrations | `llm/` (registry), `api/` | — |
+| S05E02 | user interface, tools for agents, search engines and vector stores | `tools/`, `rag/` | — |
+| S05E03 | model migrations and API changes, steering an agent's evolution | `llm/` (registry), and an ADR | — |
+| S05E04 | production experience | everything | — |
+| S05E05 | an assistant of your own — configuration, tools, collaboration, growth | everything | — |
 
-## Wnioski dla architektury
+## What this implies for the architecture
 
-Prymitywy powtarzające się w S01E01–E05, czyli te, które budujemy najpierw:
+The primitives that recur across S01E01–E05 are the ones built first. Three of the five exist:
 
-1. `core/http` — retry, backoff, nagłówki rate-limit (wymuszone przez S01E05)
-2. `core/cache` — ponowne uruchomienie zadania ma kosztować zero zapytań
-3. `core/trace` — JSONL każdego wywołania; fundament pod S03E01, dlatego istnieje od S01E01
-4. `llm/` — `complete`, `complete_structured`, vision, tool calling
-5. `hub/` — pobieranie danych, `/verify`, ekstrakcja `{FLG:...}`, respektowanie `dry_run`
-6. `config` — sekrety poza kodem
-7. `tasks/` — jeden moduł na zadanie + rejestr + CLI
+1. `adapters/http/` ✓ — retry, backoff, deferring to `Retry-After` (forced by S01E05)
+2. `adapters/cache/` ✓ — re-running a task must cost zero requests
+3. `adapters/logging/` ✓ — JSONL per call; the foundation for S03E01, which is why it exists from
+   S01E01 rather than from season 3
+4. `llm/` — completions, enforced response schemas, vision, tool calling
+5. `application/` — the task modules and the platform client: fetching input, `/verify`, extracting
+   the answer token
+
+`app/config.py` ✓ keeps secrets out of the code and out of every module above.
+
+**Why there is no `hub/` and no `tasks/`.** Both appeared in the first draft of this map, written
+before the layers were settled. They are one thing, and it is `application/` — the only layer
+permitted to know that this course exists (`CLAUDE.md` section 6, and the `PostToolUse` hook that
+greps for course vocabulary in `domain/`, `adapters/` and `app/`). Splitting the platform client
+from the task modules is a decision for the day there is a second thing to talk to, not for a map.

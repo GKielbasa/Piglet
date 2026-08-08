@@ -1,8 +1,5 @@
-# Materiały kursu — nie trafiają do repo (projekt idzie na publicznego GitHuba).
-# Zostają na dysku i są czytelne dla agenta; git ich po prostu nie widzi.
 _teoria/
 _exampleCode/
-
 .env
 .env.*
 !.env.example
@@ -19,11 +16,12 @@ htmlcov/
 build/
 dist/
 *.egg-info/
-piglet/data/
 
-
-# .claude/ jest wersjonowane — hooki i skille to część infrastruktury projektu.
-# Ignorujemy tylko stan przejściowy: marker między hookiem PostToolUse a Stop.
+# Anchored to the repository root, because the CLI writes its cache beside whichever
+# directory it is run from. An unanchored `data` would also swallow src/piglet/data,
+# and cached responses carry whole bodies and every response header.
+/data/
+/piglet/data/
 .claude/.quality-pending
 
 # Subagent reports — reviews, drafted assertions, implementation summaries.

@@ -35,6 +35,82 @@ Do not assume. Do not hide uncertainty. Name the trade-offs.
 **Do not create project structure or modules nobody asked for.** An architecture
 proposal is text to discuss, not files on disk.
 
+## 1a. Explaining to the author
+
+Section 0 makes the author's understanding the deliverable, not a courtesy wrapped around
+the code. An explanation is therefore work, and it fails on its own terms: an answer the
+author cannot follow is a failed answer, exactly like code they cannot explain.
+
+The failure has one recognisable shape — **starting in the middle.** A colleague arrives
+three thoughts deep, names a class, a status code and a race condition, and argues about
+the fix while the listener is still working out which part of the system is under
+discussion. The problem is not that they were too technical. It is the missing first
+sentence.
+
+### The four moves, in order
+
+For a question, a research result, a finding, a trade-off, a diagnosis of something broken:
+
+1. **What is going on.** Two or three sentences, in the domain rather than the
+   implementation: which part of the system, what it was meant to do, what it does instead.
+   If the author's first reaction is "wait, where is this happening?", this move was skipped.
+2. **Why it matters.** What breaks, or what the decision changes downstream. The stake, not
+   the mechanism.
+3. **The technical detail — all of it.** Plain words are the wrapper, never a filter. Names,
+   signatures, numbers, the exact error text stay. "Simply" never means "less".
+4. **An example that shows it.** A concrete input, what actually happens, what should have
+   happened. Where an example genuinely cannot exist — a naming choice, a decision between
+   two libraries — say so and name the criterion instead of inventing one to fill the slot.
+
+**A question carries what is needed to answer it:** the options, what each costs, and a
+recommendation with grounds. "Which approach do you prefer?" with the research left out
+hands the work back to the author. Section 1 asks for the trade-offs to be named; here is
+where they get named.
+
+### What is left out
+
+- restating the request back to the author;
+- the recap of the recap — a closing paragraph repeating the opening one;
+- roads considered and not taken, unless the author asked or the rejection is the point;
+- filler that carries nothing: "it is worth noting", "generally speaking", "as we discussed";
+- adjectives for one's own work: "robust", "clean", "comprehensive".
+
+Length is not the measure. A long answer that carries a lot is fine; three padded sentences
+are not. The test runs per sentence: delete it — was anything lost?
+
+### The shape, on an invented finding
+
+**Bad.** Every fact in it is correct, and the author cannot use it:
+
+> `raise_for_status()` doesn't fire on a throttled call — the API answers 200 with an empty
+> body, so `RetryPolicy` is never consulted. Change the transport or the profile?
+
+**Good.** The same facts, four moves:
+
+> **A throttled call reaches us looking like a success.** When the API rate-limits us it
+> does not answer 429 — it answers 200 with an empty body. Nothing in the client reads that
+> as a failure, so no retry happens and the caller quietly receives nothing.
+>
+> That is the expensive kind: no exception, nothing in the log, just a run that ends early
+> with a plausible-looking empty result.
+>
+> Mechanically: `HTTPXTransport` decides on the status code, `raise_for_status()` sees 200
+> and returns normally, `ResilientClient` hands back a response with an empty body, and
+> `RetryPolicy` is never reached because it is only ever consulted on an exception.
+>
+> Example: 30 requests in a minute against one endpoint. From roughly the 21st the transport
+> log shows `status=200 bytes=0`, and the run finishes with no error and no data.
+>
+> The decision is yours, because an empty 200 is legitimate for some endpoints: (a) the
+> service profile declares per service that an empty body means throttled — one field, no
+> effect on anything else; (b) the transport treats an empty 200 as retryable everywhere —
+> one place, and wrong for every endpoint that legitimately returns nothing. I would take (a).
+
+No hook can check any of this; it is prose, not a grep. It holds because this file is read
+at the start of every session — by the subagents too, whose reports are written for the
+author to read. **"Explain that again from the top"** is the author's correction, and it
+asks for the four moves from move one, not a shorter version of the answer that just failed.
+
 ## 2. Simplicity first
 
 The least code that solves the problem. Nothing speculative.
@@ -142,6 +218,13 @@ Code. A plan is a decision, not an implementation. A snippet is admissible only 
 illustrate a signature or a contract awaiting approval — never as a finished function body.
 
 ### When an ADR is needed instead of a plan
+
+> **Borrowed, not invented.** The form is Michael Nygard's, from *Documenting Architecture
+> Decisions* (15 November 2011): title, context, decision, status, consequences — and the rule
+> that gives it its value, in his words, *"If a decision is reversed, we will keep the old one
+> around, but mark it as superseded."* What follows is that convention placed inside this
+> project's workflow, nothing more.
+> <https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions.html>
 
 When the decision is hard to reverse, or will be questioned a month from now. A plan
 describes *how we do it now*; an ADR describes *why this way and not another* — and stays
@@ -386,8 +469,10 @@ The gates are automated and **cannot be skipped**: a `PostToolUse` hook runs ruf
 basedpyright after every `.py` write — plus greps for section 9 names, the section 6
 universality test, and a test that has been skipped or emptied of assertions (section 5) — and a
 `Stop` hook runs all five when a turn tries to end. Both live in `.claude/hooks/`, alongside two
-hooks that serve the subagents of section 13: one confining a read-only agent's writes, one
-telling the compactor what must survive.
+more: `write-scope.sh`, which confines a read-only subagent's writes and is wired from those
+agents' own frontmatter rather than from `settings.json`, and `session-resume.sh`, which hands a
+fresh session the handoff note on `SessionStart`. Compaction is not steerable and nothing worth
+keeping may depend on surviving it — what matters goes to disk, and a new session reads it back.
 
 ### Two type checkers, one rule
 
