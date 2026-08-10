@@ -152,24 +152,23 @@ tam jest — a jeśli repo było publiczne, należy zakładać, że został pobr
 
 ---
 
-## 7. Co z tego wynika dla `piglet`
+## 7. Maska nie odróżnia atrapy od prawdziwego klucza
 
-| Praktyka | Stan |
-|---|---|
-| sekrety poza kodem, w `.env` | jest; `.env` w `.gitignore`, `.env.example` wersjonowany |
-| `SecretStr` w konfiguracji | jest — `piglet config` pokazuje `**********` |
-| jedno miejsce czytania środowiska | jest — `pydantic-settings` |
-| redakcja sekretów w dzienniku | jest — procesor `structlog`, z filtrem pustych wartości |
-| **denylista wyprowadzona z konfiguracji** | brak — lista jest wpisana ręcznie w `start_run`, więc nowe pole `SecretStr` nie jest chronione automatycznie |
-| **klucz kursu w ścieżce URL** | znany problem — od S01E01 musi trafić do denylisty |
-| allowlist logowanych pól | de facto jest (logujemy wypisane pola), ale nie jest zapisana jako reguła |
-| skaner sekretów w `pre-commit` | brak — hook istnieje, skanera w nim nie ma |
-| rotacja, wygasanie, least privilege | nie dotyczy dziś (klucze osobiste), dotyczy przy pierwszym CI |
+**Placeholder w `.env` wygląda w wyjściu dokładnie tak samo jak działający sekret**
+(`**********`). Konfiguracja mówi wtedy „wartość jest", choć wartość jest bez sensu,
+a dowiesz się o tym dopiero z 401 od serwera.
 
-Jedna rzecz warta zapamiętania na później: **atrapa klucza w `.env` wygląda w wyjściu
-dokładnie tak samo jak klucz prawdziwy** (`**********`). To argument za tym, żeby
-konfiguracja odróżniała „brak wartości" od „wartość jest" — na przykład wypisując długość
-albo cztery ostatnie znaki zamiast stałej maski.
+Argument za tym, żeby maskowanie odróżniało „brak wartości" od „wartość jest" — na przykład
+wypisując długość albo cztery ostatnie znaki zamiast stałej liczby gwiazdek. Koszt zerowy,
+a diagnoza skraca się z kwadransa do sekundy.
+
+## 8. Lista kontrolna sekretów
+
+sekrety poza kodem i poza repo · **jedno** miejsce czytania środowiska · `SecretStr`
+w konfiguracji · redakcja przy wyjściu do dziennika · denylista **wyprowadzona
+z konfiguracji**, nie przepisana ręcznie — inaczej nowe pole nie jest chronione ·
+allowlist logowanych pól zapisana jako reguła, nie jako przypadek · skaner sekretów
+w `pre-commit` · rotacja, wygasanie i least privilege — od pierwszego CI, nie wcześniej.
 
 ---
 

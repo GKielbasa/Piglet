@@ -1,5 +1,11 @@
 _teoria/
 _exampleCode/
+
+# Task statements reduced to requirements: endpoints, response formats, criteria.
+# Course material rephrased, so it stays out of the repository for the same reason
+# _teoria/ does. The universal knowledge a task teaches goes to _knowledgeBase/.
+_tasks/
+
 .env
 .env.*
 !.env.example
@@ -24,7 +30,5 @@ dist/
 /piglet/data/
 .claude/.quality-pending
 
-# Subagent reports — reviews, drafted assertions, implementation summaries.
-# Working notes for one step, not a record of the project: what survives a step
-# belongs in docs/ or in an ADR, deliberately, not by accumulating here.
 .piglet-work/
+_tasks

@@ -56,6 +56,18 @@ stronie huba.
 - **Batch tagging** — jedno wywołanie z ponumerowaną listą stanowisk zamiast N wywołań.
 - **Opis przy każdym tagu** w schemacie, bo ratuje niejednoznaczne stanowiska.
 
+## Rdzeń (`CLAUDE.md` §6)
+
+*Klasyfikacja rekordów do zamkniętej taksonomii przez model, z wymuszonym schematem
+odpowiedzi i batchowaniem.* To jest część, która idzie do warstwy narzędziowej.
+
+Filtrowanie po płci, mieście i roczniku to zwykły kod bez niczego uniwersalnego — zostaje
+w cienkim module zadania, razem z pobraniem CSV i wysyłką do `/verify`.
+
+Z rzeczy potrzebnych mamy już `adapters/cache/` (ponowny przebieg nie kosztuje requestu)
+oraz `adapters/http/` z retry i backoffem. Brakuje `llm/` i warstwy puszczającej N wywołań
+modelu równolegle.
+
 ## Otwarte, do rozstrzygnięcia przed implementacją
 
 1. **„między 20 a 40 lat" — przedział domknięty czy otwarty?** Przy roczniku i roku 2026:

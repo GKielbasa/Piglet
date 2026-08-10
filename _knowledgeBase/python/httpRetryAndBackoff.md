@@ -194,21 +194,16 @@ tańszy wariant tego samego pomysłu: nie odcina usługi, tylko odcina *ponawian
 
 ---
 
-## 8. Co z tego wynika dla `piglet`
+## 8. Lista kontrolna klienta HTTP
 
-| Praktyka | Stan | Gdzie |
-|---|---|---|
-| `Retry-After` w obu formach | **jest** | `domain/http/retry_policy.py` |
-| backoff wykładniczy + jitter | jest, ale wariant „doklejony ogon" | `_backoff_seconds` |
-| **full jitter** | brak — jitter przestaje rozpraszać przy dużych opóźnieniach | — |
-| **cap na pojedyncze opóźnienie** | brak — jest tylko budżet sumaryczny | — |
-| budżet czasu jednego żądania | jest (`max_total_delay_seconds`) | — |
-| **budżet ponowień w procesie** | brak — istotne przy `asyncio.gather` | — |
-| **idempotencja przed ponowieniem** | brak — ponawiamy POST-y bez zabezpieczenia | patrz `httpErrorClassification.md` |
-| profil serwisu wstrzykiwany | brak — zbiór statusów i odczyt nagłówków są zaszyte w rdzeniu | — |
-| timeouty rozbite na składowe | brak — jedna liczba na wszystko | `app/container.py` |
-| log każdej próby | jest | `adapters/http/resilient_client.py` |
-| ponawianie na jednej warstwie | jest, do pilnowania przy SDK dostawców | — |
+Jedenaście rzeczy, o które warto zapytać dowolny klient ponawiający żądania — własny czy
+cudzy. Każda ma swoją sekcję wyżej:
+
+`Retry-After` w obu formach · backoff wykładniczy · **full jitter**, nie doklejony ogon ·
+cap na pojedyncze opóźnienie · budżet czasu jednego żądania · budżet ponowień w procesie
+(istotny przy `asyncio.gather`) · sprawdzenie idempotencji przed ponowieniem · profil
+serwisu wstrzykiwany zamiast zaszytych statusów · timeouty rozbite na składowe, nie jedna
+liczba · log każdej próby · ponawianie na **jednej** warstwie.
 
 ---
 

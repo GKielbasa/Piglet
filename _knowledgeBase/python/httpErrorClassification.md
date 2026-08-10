@@ -136,22 +136,16 @@ inaczej monitoring alarmuje przy każdej próbie, która i tak się udała za dr
 
 ---
 
-## 6. Co z tego wynika dla `piglet`
+## 6. Lista kontrolna klasyfikacji
 
-| Praktyka | Stan |
-|---|---|
-| zbiór statusów ponawialnych | jest: `{429, 500, 502, 503, 504}` — **brakuje 408 i 425** |
-| osobne opóźnienie bazowe dla throttlingu | brak — 429 i 503 czekają tyle samo |
-| klasyfikacja porażki jako wartość | brak — `RetryDecision` niesie tylko `should_retry` |
-| typ wyjątku z klasy porażki | brak — wyprowadzany z `attempt == 1` |
-| **ochrona przed ponowieniem POST-a** | **brak — ponawiamy każdą metodę**, wbrew RFC 9110 §9.2.2 |
-| klasa porażki w dzienniku | brak — jest status, nie ma powodu rezygnacji |
-| kod błędu z ciała przed statusem | brak — i słusznie, to należy do profilu serwisu |
+Siedem pytań do dowolnego klienta ponawiającego żądania:
 
-Najpoważniejsza pozycja to ponawianie POST-ów. Przy API, którego POST tylko zgłasza wynik do
-sprawdzenia, skutek jest łagodny — powtórzenie niczego nie psuje. Ale narzędzie ma być
-uniwersalne, a pierwsze API z płatnościami albo z tworzeniem zasobów zamienia tę wygodę
-w duplikaty.
+zbiór statusów ponawialnych — czy zawiera 408 i 425 · czy throttling ma **osobne**
+opóźnienie bazowe niż zwykły błąd 5xx · czy klasa porażki jest wartością, czy tylko
+`bool should_retry` · czy typ wyjątku wynika z klasy porażki, a nie z numeru próby ·
+czy POST jest chroniony przed ponowieniem (RFC 9110 §9.2.2) · czy klasa porażki trafia
+do dziennika obok statusu · czy kod błędu z ciała jest czytany **przed** statusem — i czy
+robi to profil serwisu, a nie rdzeń klienta.
 
 ---
 

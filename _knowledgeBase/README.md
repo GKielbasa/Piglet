@@ -1,5 +1,10 @@
 # Baza wiedzy
-Jeden plik = jeden temat. Trzy działy: język, agenci, warsztat.
+
+Wiedza uniwersalna, która ma służyć w pracy, a nie w jednym repozytorium. Jeden plik =
+jeden temat. Trzy działy: język, agenci, warsztat.
+
+**Zanim coś tu dopiszesz:** [workflow/knowledgeBaseScope.md](workflow/knowledgeBaseScope.md)
+— co tu wchodzi, a co idzie do `_tasks/` albo do `piglet/docs/`.
 
 ## `python/` — język i biblioteki
 
@@ -20,4 +25,5 @@ Jeden plik = jeden temat. Trzy działy: język, agenci, warsztat.
 
 | Plik | Temat |
 |---|---|
+| [knowledgeBaseScope.md](workflow/knowledgeBaseScope.md) | zakres tej bazy: test uniwersalności, czego tu nie ma i gdzie to idzie |
 | [bashHooks.md](workflow/bashHooks.md) | hooki jakości: kontrakt z harnessem, konstrukcje bashowe, pułapki |

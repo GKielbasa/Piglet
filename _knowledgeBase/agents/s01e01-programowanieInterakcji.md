@@ -146,19 +146,6 @@ wróci przy systemach wieloagentowych.
 
 ---
 
-## 9. Co z tego wynika dla `piglet`
-
-- **Uniwersalny rdzeń** (`CLAUDE.md` §6): *klasyfikacja rekordów do zamkniętej taksonomii
-  przez model, z wymuszonym schematem odpowiedzi i batchowaniem*. Filtrowanie rekordów po
-  wartościach pól to zwykły kod i nie ma w sobie nic uniwersalnego — zostaje w cienkim
-  module wywołującym.
-- **Mechanizm 3 z sekcji 3 mamy już zbudowany** — `adapters/cache/`. Ponowny przebieg nie
-  kosztuje ani jednego requestu.
-- **Mechanizm 2** (równolegle i w grupach) spotka się z `adapters/http/`: retry, backoff
-  i `Retry-After` już są, brakuje warstwy, która puszcza N wywołań LLM naraz.
-- **Nazwy i opisy pól w schemacie to prompt**, więc podlegają §9 `CLAUDE.md` tak samo jak
-  reszta kodu — i tak samo decydują o wyniku.
-
 ## Źródła
 
 - `_teoria/s01e01-programowanie-interakcji-z-modelem-jezykowym-1773053098.md`
