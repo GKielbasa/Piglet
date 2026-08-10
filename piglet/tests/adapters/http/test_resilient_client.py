@@ -25,6 +25,11 @@ from piglet.errors import HTTPError, RetryExhaustedError, TransportError, Unsafe
 REQUEST = HTTPRequest(HTTPMethod.GET, "https://example.com/list.csv")
 ORDER = HTTPRequest(HTTPMethod.POST, "https://example.com/orders", body=b'{"quantity": 2}')
 QUICK_RETRIES = RetryPolicy(max_attempts=3, transient_base_delay_seconds=0.5, jitter_fraction=lambda: 1.0)
+# A deadline an order of magnitude shorter than one attempt takes, so a real short
+# sleep in the transport reaches it without the suite waiting for anything.
+SHORT_DEADLINE = RetryPolicy(
+    max_attempts=3, transient_base_delay_seconds=0.5, jitter_fraction=lambda: 1.0, max_total_seconds=0.01
+)
 STANDARD_PROFILE = ServiceProfile()
 
 
@@ -46,6 +51,23 @@ class ScriptedTransport:
 
     async def aclose(self) -> None:
         self.is_closed = True
+
+
+class TransportThatOutlastsTheDeadline:
+    """Answers only after taking longer than SHORT_DEADLINE allows a whole request."""
+
+    def __init__(self, answer: HTTPResponse | TransportError) -> None:
+        self.answer = answer
+        self.requests: list[HTTPRequest] = []
+
+    async def send(self, request: HTTPRequest) -> HTTPResponse:
+        self.requests.append(request)
+        await asyncio.sleep(0.05)
+        if isinstance(self.answer, TransportError):
+            raise self.answer
+        return self.answer
+
+    async def aclose(self) -> None: ...
 
 
 def failure_that_never_reached_the_server() -> TransportError:
@@ -89,8 +111,9 @@ def build_client(
     sleep: Sleeper,
     cache: FilesystemResponseCache | None = None,
     profile: ServiceProfile = STANDARD_PROFILE,
+    retry_policy: RetryPolicy = QUICK_RETRIES,
 ) -> ResilientHTTPClient:
-    return ResilientHTTPClient(transport, QUICK_RETRIES, profile, sleep, cache)
+    return ResilientHTTPClient(transport, retry_policy, profile, sleep, cache)
 
 
 async def test_a_successful_request_is_sent_once() -> None:
@@ -134,6 +157,24 @@ async def test_a_permanent_failure_is_reported_without_a_second_attempt() -> Non
     assert len(transport.requests) == 1
 
 
+async def test_a_permanent_status_reports_how_many_attempts_it_took_to_reach_it() -> None:
+    transport = ScriptedTransport(HTTPResponse(503), HTTPResponse(503), HTTPResponse(404))
+
+    with pytest.raises(HTTPError) as failure:
+        await build_client(transport, RecordedSleeper()).send(REQUEST)
+
+    assert failure.value.attempts == 3
+
+
+async def test_a_permanent_status_on_the_first_attempt_reports_one_attempt() -> None:
+    transport = ScriptedTransport(HTTPResponse(404))
+
+    with pytest.raises(HTTPError) as failure:
+        await build_client(transport, RecordedSleeper()).send(REQUEST)
+
+    assert failure.value.attempts == 1
+
+
 async def test_exhausted_attempts_report_the_class_of_the_failure() -> None:
     transport = ScriptedTransport(HTTPResponse(503))
 
@@ -169,6 +210,52 @@ async def test_a_budget_that_runs_out_is_told_apart_from_attempts_that_do() -> N
 
     assert failure.value.give_up_reason is GiveUpReason.BUDGET_EXHAUSTED
     assert failure.value.failure_class is FailureClass.THROTTLING
+
+
+async def test_a_request_that_outlives_its_deadline_stops_retrying() -> None:
+    transport = TransportThatOutlastsTheDeadline(HTTPResponse(503))
+
+    with pytest.raises(RetryExhaustedError):
+        await build_client(transport, RecordedSleeper(), retry_policy=SHORT_DEADLINE).send(REQUEST)
+
+    assert len(transport.requests) == 1
+
+
+async def test_a_request_abandoned_on_its_deadline_says_which_limit_ended_it() -> None:
+    transport = TransportThatOutlastsTheDeadline(HTTPResponse(503))
+
+    with pytest.raises(RetryExhaustedError) as failure:
+        await build_client(transport, RecordedSleeper(), retry_policy=SHORT_DEADLINE).send(REQUEST)
+
+    assert failure.value.give_up_reason is GiveUpReason.DEADLINE_EXCEEDED
+
+
+async def test_a_deadline_reached_after_a_failure_that_never_answered_is_reported_the_same_way() -> None:
+    transport = TransportThatOutlastsTheDeadline(failure_that_never_reached_the_server())
+
+    with pytest.raises(RetryExhaustedError) as failure:
+        await build_client(transport, RecordedSleeper(), retry_policy=SHORT_DEADLINE).send(REQUEST)
+
+    assert failure.value.give_up_reason is GiveUpReason.DEADLINE_EXCEEDED
+    assert len(transport.requests) == 1
+
+
+async def test_a_request_abandoned_on_its_deadline_does_not_wait_first() -> None:
+    transport = TransportThatOutlastsTheDeadline(HTTPResponse(503))
+    sleeper = RecordedSleeper()
+
+    with pytest.raises(RetryExhaustedError):
+        await build_client(transport, sleeper, retry_policy=SHORT_DEADLINE).send(REQUEST)
+
+    assert sleeper.waits == []
+
+
+async def test_a_deadline_does_not_interrupt_an_attempt_already_in_flight() -> None:
+    transport = TransportThatOutlastsTheDeadline(HTTPResponse(200, {}, b"late but complete"))
+
+    answer = await build_client(transport, RecordedSleeper(), retry_policy=SHORT_DEADLINE).send(REQUEST)
+
+    assert answer.body == b"late but complete"
 
 
 async def test_a_non_idempotent_request_is_refused_after_one_attempt() -> None:
@@ -389,6 +476,17 @@ async def test_a_cache_miss_travels_and_is_remembered(tmp_path: Path) -> None:
     assert await cache.get(compute_cache_key(REQUEST)) == HTTPResponse(200, {}, b"fresh")
 
 
+async def test_a_caller_still_receives_a_response_the_cache_could_not_remember(tmp_path: Path) -> None:
+    unwritable = tmp_path / "read-only"
+    unwritable.mkdir(mode=0o500)
+    cache = FilesystemResponseCache(unwritable, ttl_seconds=60)
+    transport = ScriptedTransport(HTTPResponse(200, {}, b"fetched but not remembered"))
+
+    answer = await build_client(transport, RecordedSleeper(), cache).send(REQUEST, should_cache=True)
+
+    assert answer.body == b"fetched but not remembered"
+
+
 async def test_a_call_that_opts_out_ignores_a_stored_answer(tmp_path: Path) -> None:
     cache = FilesystemResponseCache(tmp_path, ttl_seconds=60)
     await build_client(ScriptedTransport(HTTPResponse(200, {}, b"remembered")), RecordedSleeper(), cache).send(
@@ -462,6 +560,16 @@ async def test_the_attempt_we_stop_at_records_why_we_stopped(tmp_path: Path) -> 
         await build_client(transport, RecordedSleeper()).send(REQUEST)
 
     assert read_entries(tmp_path)[-1]["give_up_reason"] == GiveUpReason.ATTEMPTS_EXHAUSTED
+
+
+async def test_the_attempt_the_deadline_ends_records_why_we_stopped(tmp_path: Path) -> None:
+    configure_logging(tmp_path)
+    transport = TransportThatOutlastsTheDeadline(HTTPResponse(503))
+
+    with pytest.raises(RetryExhaustedError):
+        await build_client(transport, RecordedSleeper(), retry_policy=SHORT_DEADLINE).send(REQUEST)
+
+    assert read_entries(tmp_path)[-1]["give_up_reason"] == GiveUpReason.DEADLINE_EXCEEDED
 
 
 async def test_an_attempt_we_wait_after_records_how_long_we_waited(tmp_path: Path) -> None:

@@ -48,5 +48,7 @@ def build_http_client(settings: Settings, profile: ServiceProfile | None = None)
     """
     transport = HttpxTransport(httpx.AsyncClient(timeout=settings.http_timeout_seconds))
     cache = FilesystemResponseCache(settings.cache_dir, settings.cache_ttl_seconds) if settings.cache_enabled else None
-    retry_policy = RetryPolicy(max_attempts=settings.retry_max_attempts)
+    retry_policy = RetryPolicy(
+        max_attempts=settings.retry_max_attempts, max_total_seconds=settings.http_deadline_seconds
+    )
     return ResilientHTTPClient(transport, retry_policy, profile or ServiceProfile(), asyncio.sleep, cache)

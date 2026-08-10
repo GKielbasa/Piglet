@@ -5,6 +5,9 @@ import json
 import time
 from pathlib import Path
 
+import structlog
+from structlog.typing import FilteringBoundLogger
+
 from piglet.domain.http.cache_key import CacheKey
 from piglet.domain.http.response import HTTPResponse
 
@@ -20,14 +23,16 @@ class FilesystemResponseCache:
     Attributes:
         directory: Where the files live. Created on the first write.
         ttl_seconds: How long a stored response stays valid.
+        logger: Where a write that could not happen is reported.
 
     Example:
         >>> cache = FilesystemResponseCache(Path("data/cache"), ttl_seconds=3600)
     """
 
-    def __init__(self, directory: Path, ttl_seconds: int) -> None:
+    def __init__(self, directory: Path, ttl_seconds: int, logger: FilteringBoundLogger | None = None) -> None:
         self.directory = directory
         self.ttl_seconds = ttl_seconds
+        self.logger = logger or structlog.get_logger()
 
     async def get(self, key: CacheKey) -> HTTPResponse | None:
         """Read a remembered response.
@@ -58,18 +63,25 @@ class FilesystemResponseCache:
     async def store(self, key: CacheKey, response: HTTPResponse) -> None:
         """Remember a response under a key.
 
+        A failure to write is recorded and not raised: the caller already holds the
+        response, and a cache that cannot remember costs one network call next time,
+        while a raise here would destroy an answer that arrived intact.
+
         Args:
             key: Identity of the request.
             response: What to remember.
         """
-        self.directory.mkdir(parents=True, exist_ok=True)
         document = {
             "stored_at": time.time(),
             "status_code": response.status_code,
             "headers": dict(response.headers),
             "body_base64": base64.b64encode(response.body).decode("ascii"),
         }
-        self._path_for(key).write_text(json.dumps(document), encoding="utf-8")
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            self._path_for(key).write_text(json.dumps(document), encoding="utf-8")
+        except OSError as unwritable:
+            self.logger.warning("cache_store_failed", cache_error=type(unwritable).__name__)
 
     def _path_for(self, key: CacheKey) -> Path:
         """Map a key to the file that holds it.

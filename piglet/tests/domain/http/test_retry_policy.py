@@ -88,6 +88,32 @@ def test_waiting_that_lands_exactly_on_the_ceiling_is_still_allowed() -> None:
     assert decision.should_retry is True
 
 
+def test_a_policy_is_past_its_deadline_once_more_time_has_passed_than_it_allows() -> None:
+    policy = RetryPolicy(max_total_seconds=5.0)
+
+    assert policy.is_past_deadline(5.1) is True
+
+
+def test_a_policy_is_not_past_its_deadline_while_time_remains() -> None:
+    policy = RetryPolicy(max_total_seconds=5.0)
+
+    assert policy.is_past_deadline(4.9) is False
+
+
+def test_elapsed_time_landing_exactly_on_the_deadline_has_reached_it() -> None:
+    policy = RetryPolicy(max_total_seconds=5.0)
+
+    assert policy.is_past_deadline(5.0) is True
+
+
+def test_the_deadline_and_the_waiting_budget_are_separate_limits() -> None:
+    long_waiting_short_deadline = RetryPolicy(max_total_delay_seconds=600.0, max_total_seconds=5.0)
+    short_waiting_long_deadline = RetryPolicy(max_total_delay_seconds=5.0, max_total_seconds=600.0)
+
+    assert long_waiting_short_deadline.is_past_deadline(10.0) is True
+    assert short_waiting_long_deadline.is_past_deadline(10.0) is False
+
+
 def test_a_request_that_is_not_safe_to_repeat_is_refused_after_one_attempt_when_the_server_may_have_acted() -> None:
     decision = WHOLE_WINDOW.decide(
         HTTPResponse(503), FailureClass.TRANSIENT, attempt=1, is_safe_to_repeat=False, may_have_been_processed=True

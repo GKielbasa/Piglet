@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from piglet.errors import InvalidRequestError
+
 __all__ = ["HTTPMethod", "HTTPRequest"]
 
 
@@ -50,8 +52,12 @@ class HTTPRequest:
 
     def __post_init__(self) -> None:
         if not self.url.strip():
-            raise ValueError("url must not be empty")
+            raise InvalidRequestError("url must not be empty")
         # Annotations vanish at runtime, so a verb arriving from a file or from
         # configuration would otherwise reach the socket unchecked — and, still a plain
         # string, would have no `is_idempotent` for the retry policy to ask about.
-        object.__setattr__(self, "method", HTTPMethod(self.method))
+        try:
+            method = HTTPMethod(self.method)
+        except ValueError as unusable:
+            raise InvalidRequestError(f"{self.method!r} is not a verb this library can send") from unusable
+        object.__setattr__(self, "method", method)

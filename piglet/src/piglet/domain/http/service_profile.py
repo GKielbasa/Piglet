@@ -47,9 +47,10 @@ class ServiceProfile:
             response: The answer to judge.
 
         Returns:
-            The failure class. Anything named in neither set is permanent — a success
-            and a redirect included, because neither becomes something else by being
-            asked for again.
+            The failure class. Anything named in neither set is permanent, because it
+            does not become something else by being asked for again — a redirect, and
+            equally a success, though the client only ever asks about an answer it has
+            already found unsuccessful.
         """
         if response.status_code in self.throttling_statuses:
             return FailureClass.THROTTLING

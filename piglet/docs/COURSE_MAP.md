@@ -65,7 +65,11 @@ The primitives that recur across S01E01–E05 are the ones built first. Three of
 1. `adapters/http/` ✓ — retry, backoff, deferring to `Retry-After` (forced by S01E05)
 2. `adapters/cache/` ✓ — re-running a task must cost zero requests
 3. `adapters/logging/` ✓ — JSONL per call; the foundation for S03E01, which is why it exists from
-   S01E01 rather than from season 3
+   S01E01 rather than from season 3. **One known debt to settle when S03E01 turns the log into an
+   evaluation dataset:** `http_attempt_finished` is emitted in two different shapes —
+   `ResilientHTTPClient._record_attempt` binds its fields progressively, `_recall` hand-rolls a
+   second version with a different field set for a cache hit. One event name, two schemas, so every
+   consumer has to handle both. Cheap to unify now, awkward once something reads it.
 4. `llm/` — completions, enforced response schemas, vision, tool calling
 5. `application/` — the task modules and the platform client: fetching input, `/verify`, extracting
    the answer token

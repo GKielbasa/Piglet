@@ -6,7 +6,7 @@ it, which is why it can be tested exhaustively without a network and without wai
 
 What a status *means* is not here either — that is one service's knowledge and lives in
 its profile. This module holds only the mechanism: the attempt count, the window, the
-budget and the delay a server asked for.
+two budgets — waiting and wall clock — and the delay a server asked for.
 """
 
 import math
@@ -30,6 +30,7 @@ class GiveUpReason(StrEnum):
     PERMANENT_FAILURE = "permanent_failure"
     ATTEMPTS_EXHAUSTED = "attempts_exhausted"
     BUDGET_EXHAUSTED = "budget_exhausted"
+    DEADLINE_EXCEEDED = "deadline_exceeded"
     UNSAFE_TO_REPEAT = "unsafe_to_repeat"
 
 
@@ -65,6 +66,9 @@ class RetryPolicy:
             because a rate limit passes when its window opens rather than in milliseconds.
         max_delay_seconds: Ceiling on one window we compute.
         max_total_delay_seconds: Ceiling on the waiting summed over one request.
+        max_total_seconds: Ceiling on the real time one request may spend altogether,
+            the sending included. A separate limit from the waiting budget: a service
+            answering slowly spends no waiting at all and would otherwise be unbounded.
         jitter_fraction: Draws how much of the window is actually waited. Injected so a
             test can pin the delay exactly.
 
@@ -78,7 +82,23 @@ class RetryPolicy:
     throttling_base_delay_seconds: float = 1.0
     max_delay_seconds: float = 20.0
     max_total_delay_seconds: float = 60.0
+    max_total_seconds: float = 120.0
     jitter_fraction: Callable[[], float] = random.random
+
+    def is_past_deadline(self, elapsed_seconds: float) -> bool:
+        """Say whether one request has already spent all the time it is allowed.
+
+        Args:
+            elapsed_seconds: Real time this request has consumed so far, the sending
+                and the waiting both included.
+
+        Returns:
+            True when nothing more may be attempted.
+        """
+        # The waiting budget compares a delay not yet taken, so landing exactly on its
+        # ceiling is harmless. This compares time already spent, so exactly-equal means
+        # anything further certainly overruns it — hence `>=` where the sibling has `>`.
+        return elapsed_seconds >= self.max_total_seconds
 
     def decide(
         self,

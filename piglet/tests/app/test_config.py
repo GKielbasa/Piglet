@@ -34,6 +34,16 @@ def test_defaults_are_safe() -> None:
     assert settings.log_dir == Path("data") / "logs"
 
 
+def test_the_http_deadline_has_a_default() -> None:
+    assert Settings().http_deadline_seconds == 120.0
+
+
+def test_the_http_deadline_can_be_set_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIGLET_HTTP_DEADLINE_SECONDS", "5")
+
+    assert Settings().http_deadline_seconds == 5.0
+
+
 def test_env_file_is_read(tmp_path: Path) -> None:
     (tmp_path / ".env").write_text(
         "PIGLET_CACHE_ENABLED=false\nPIGLET_RETRY_MAX_ATTEMPTS=7\nPIGLET_DATA_DIR=/srv/piglet\n",

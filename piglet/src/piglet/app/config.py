@@ -21,6 +21,8 @@ class Settings(BaseSettings):
         cache_enabled: Whether cached responses may be read and written at all.
         cache_ttl_seconds: How long a cached response stays valid.
         http_timeout_seconds: Deadline for a single HTTP attempt.
+        http_deadline_seconds: Deadline for one request including every retry, so a
+            service that answers slowly cannot hold a run open indefinitely.
         retry_max_attempts: How many attempts one request gets, the first included.
         log_level: Lowest level written to the log.
 
@@ -42,6 +44,7 @@ class Settings(BaseSettings):
     cache_enabled: bool = True
     cache_ttl_seconds: int = 86_400
     http_timeout_seconds: float = 30.0
+    http_deadline_seconds: float = 120.0
     retry_max_attempts: int = 4
     log_level: LogLevel = "info"
 

@@ -85,7 +85,7 @@ class ResilientHTTPClient:
             HTTPError: If the answer was a failure the profile calls permanent — the
                 request itself is wrong, so trying again changes nothing.
             RetryExhaustedError: If the failure might have passed but outlived the
-                attempts or the waiting budget the policy allowed.
+                attempts, the waiting budget or the deadline the policy allowed.
             UnsafeToRepeatError: If the failure might have passed but this request may
                 not be sent a second time.
             TransportError: If nothing answered and the failure is one the transport
@@ -101,6 +101,9 @@ class ResilientHTTPClient:
             is_safe_to_repeat = request.method.is_idempotent
         delay_used_seconds = 0.0
         attempt = 0
+        # Started here rather than at the top of `send`, so a slow disk in the cache
+        # lookup above cannot consume a deadline meant for the network.
+        retrying_started = time.perf_counter()
         while True:
             attempt += 1
             started = time.perf_counter()
@@ -116,6 +119,7 @@ class ResilientHTTPClient:
                     is_safe_to_repeat,
                     failure.may_have_been_processed,
                 )
+                decision = self._bound_by_deadline(decision, retrying_started)
                 self._record_attempt(request, attempt, duration_ms, failure, decision, failure.failure_class)
                 if decision.give_up_reason is not None:
                     _give_up(request, attempt, failure, failure.failure_class, decision.give_up_reason)
@@ -131,12 +135,32 @@ class ResilientHTTPClient:
                 decision = self.retry_policy.decide(
                     response, failure_class, attempt, delay_used_seconds, is_safe_to_repeat
                 )
+                decision = self._bound_by_deadline(decision, retrying_started)
                 self._record_attempt(request, attempt, duration_ms, response, decision, failure_class)
                 if decision.give_up_reason is not None:
                     _give_up(request, attempt, response, failure_class, decision.give_up_reason)
 
             await self.sleep(decision.delay_seconds)
             delay_used_seconds += decision.delay_seconds
+
+    def _bound_by_deadline(self, decision: RetryDecision, retrying_started: float) -> RetryDecision:
+        """Turn a decision to try again into one to stop, once the deadline has passed.
+
+        Asked in every branch that has a decision, and before the attempt is recorded:
+        a log entry must carry the reason we stopped rather than a delay never waited.
+
+        Args:
+            decision: What the policy made of the attempt that just failed.
+            retrying_started: The `time.perf_counter()` reading from when the first
+                attempt of this request began.
+
+        Returns:
+            The decision unchanged when time remains, or one naming the deadline. A
+            decision that has already given up keeps the reason it gave.
+        """
+        if decision.should_retry and self.retry_policy.is_past_deadline(time.perf_counter() - retrying_started):
+            return RetryDecision(delay_seconds=0.0, give_up_reason=GiveUpReason.DEADLINE_EXCEEDED)
+        return decision
 
     def _record_attempt(
         self,
@@ -240,7 +264,7 @@ def _give_up(
         HTTPError: When the answer marks the request itself as wrong.
         UnsafeToRepeatError: When the failure might have passed, but this request may
             not be sent twice.
-        RetryExhaustedError: When the attempts or the waiting budget ran out.
+        RetryExhaustedError: When the attempts, the waiting budget or the deadline ran out.
     """
     if isinstance(outcome, TransportError):
         if give_up_reason is GiveUpReason.PERMANENT_FAILURE:
@@ -249,7 +273,7 @@ def _give_up(
             raise UnsafeToRepeatError(request.url, request.method, attempts) from outcome
         raise RetryExhaustedError(request.url, attempts, failure_class, give_up_reason) from outcome
     if give_up_reason is GiveUpReason.PERMANENT_FAILURE:
-        raise HTTPError(request.url, outcome.status_code)
+        raise HTTPError(request.url, outcome.status_code, attempts)
     if give_up_reason is GiveUpReason.UNSAFE_TO_REPEAT:
         raise UnsafeToRepeatError(request.url, request.method, attempts, outcome.status_code)
     raise RetryExhaustedError(request.url, attempts, failure_class, give_up_reason, outcome.status_code)

@@ -1,7 +1,11 @@
+import logging
 import time
 from pathlib import Path
 
 import pytest
+import structlog
+from structlog.testing import CapturingLogger
+from structlog.typing import FilteringBoundLogger
 
 from piglet.adapters.cache.filesystem_cache import FilesystemResponseCache
 from piglet.domain.http.cache_key import CacheKey, compute_cache_key
@@ -10,6 +14,22 @@ from piglet.domain.http.response import HTTPResponse
 from piglet.domain.ports import ResponseCache
 
 KEY = compute_cache_key(HTTPRequest(HTTPMethod.GET, "https://example.com/list.csv"))
+
+
+def unwritable_directory(tmp_path: Path) -> Path:
+    """A directory that exists and refuses everything written into it."""
+    directory = tmp_path / "read-only"
+    directory.mkdir(mode=0o500)
+    return directory
+
+
+def build_recording_logger() -> tuple[CapturingLogger, FilteringBoundLogger]:
+    """A bound logger that keeps every call made to it instead of writing it anywhere."""
+    recorded = CapturingLogger()
+    logger: FilteringBoundLogger = structlog.wrap_logger(
+        recorded, processors=[], wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG)
+    )
+    return recorded, logger
 
 
 def test_it_satisfies_the_response_cache_port(tmp_path: Path) -> None:
@@ -53,6 +73,55 @@ async def test_an_entry_past_its_ttl_is_a_miss(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setattr(time, "time", lambda: later)
 
     assert await cache.get(KEY) is None
+
+
+async def test_a_response_that_cannot_be_written_is_not_lost_to_an_error(tmp_path: Path) -> None:
+    directory = unwritable_directory(tmp_path)
+    cache = FilesystemResponseCache(directory, ttl_seconds=60)
+
+    await cache.store(KEY, HTTPResponse(200, {}, b"unstorable"))
+
+    assert list(directory.iterdir()) == []
+
+
+async def test_a_response_that_cannot_be_written_is_reported_as_a_warning(tmp_path: Path) -> None:
+    recorded, logger = build_recording_logger()
+    cache = FilesystemResponseCache(unwritable_directory(tmp_path), ttl_seconds=60, logger=logger)
+
+    await cache.store(KEY, HTTPResponse(200, {}, b"unstorable"))
+
+    assert len(recorded.calls) == 1
+    assert recorded.calls[0].method_name == "warning"
+    assert recorded.calls[0].kwargs["event"] == "cache_store_failed"
+
+
+async def test_the_warning_names_what_went_wrong(tmp_path: Path) -> None:
+    recorded, logger = build_recording_logger()
+    cache = FilesystemResponseCache(unwritable_directory(tmp_path), ttl_seconds=60, logger=logger)
+
+    await cache.store(KEY, HTTPResponse(200, {}, b"unstorable"))
+
+    assert recorded.calls[0].kwargs["cache_error"] == "PermissionError"
+
+
+async def test_a_response_that_could_not_be_written_is_a_miss_afterwards(tmp_path: Path) -> None:
+    cache = FilesystemResponseCache(unwritable_directory(tmp_path), ttl_seconds=60)
+
+    await cache.store(KEY, HTTPResponse(200, {}, b"unstorable"))
+
+    assert await cache.get(KEY) is None
+
+
+async def test_a_directory_that_cannot_be_created_is_reported_the_same_way(tmp_path: Path) -> None:
+    occupied = tmp_path / "not-a-directory"
+    occupied.write_text("something else already holds this name", encoding="utf-8")
+    recorded, logger = build_recording_logger()
+    cache = FilesystemResponseCache(occupied, ttl_seconds=60, logger=logger)
+
+    await cache.store(KEY, HTTPResponse(200, {}, b"unstorable"))
+
+    assert recorded.calls[0].kwargs["event"] == "cache_store_failed"
+    assert recorded.calls[0].kwargs["cache_error"] == "FileExistsError"
 
 
 async def test_a_damaged_file_is_a_miss_not_a_crash(tmp_path: Path) -> None:

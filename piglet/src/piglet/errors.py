@@ -5,15 +5,44 @@ this library without catching unrelated failures from the runtime. Each handled
 error has its own type; nothing is ever swallowed.
 """
 
-from piglet.domain.http.request import HTTPMethod
-from piglet.domain.http.retry_policy import GiveUpReason
-from piglet.domain.http.service_profile import FailureClass
+from __future__ import annotations
 
-__all__ = ["HTTPError", "PigletError", "RetryExhaustedError", "TransportError", "UnsafeToRepeatError"]
+from typing import TYPE_CHECKING
+
+# Annotations are strings at runtime under the import above, so these three are needed
+# for type checking only. Imported for real they would make this module depend on the
+# ones it describes, and `request.py` could not raise from here without a cycle.
+#
+# This pairing is safe here and unsafe above a pydantic model: pydantic resolves
+# annotations at runtime, so a name it can only see under TYPE_CHECKING fails the model
+# at import with `PydanticUndefinedAnnotation`. Exception classes never read their own
+# annotations, which is why this file can afford it and `app/config.py` cannot.
+if TYPE_CHECKING:
+    from piglet.domain.http.request import HTTPMethod
+    from piglet.domain.http.retry_policy import GiveUpReason
+    from piglet.domain.http.service_profile import FailureClass
+
+__all__ = [
+    "HTTPError",
+    "InvalidRequestError",
+    "PigletError",
+    "RetryExhaustedError",
+    "TransportError",
+    "UnsafeToRepeatError",
+]
 
 
 class PigletError(Exception):
     """Root of the library's exception hierarchy."""
+
+
+class InvalidRequestError(PigletError, ValueError):
+    """A request this library cannot send, refused before anything travelled.
+
+    A `ValueError` as well, because a bad argument is what it is: an ordinary
+    `except ValueError` keeps working, while `except PigletError` now sees it too —
+    which is what makes this module's first sentence true of every failure we raise.
+    """
 
 
 class TransportError(PigletError):
@@ -47,12 +76,16 @@ class HTTPError(PigletError):
     Attributes:
         url: The address that answered.
         status_code: The status it answered with.
+        attempts: How many attempts were made before this answer arrived. Required
+            rather than defaulted: a permanent status can follow several transient
+            ones, and a caller reading `1` where 3 happened is misled about the cost.
     """
 
-    def __init__(self, url: str, status_code: int) -> None:
-        super().__init__(f"{url} answered with status {status_code}")
+    def __init__(self, url: str, status_code: int, attempts: int) -> None:
+        super().__init__(f"{url} answered with status {status_code} after {attempts} attempt(s)")
         self.url = url
         self.status_code = status_code
+        self.attempts = attempts
 
 
 class RetryExhaustedError(PigletError):
@@ -62,7 +95,8 @@ class RetryExhaustedError(PigletError):
         url: The address that kept failing.
         attempts: How many attempts were made in total.
         failure_class: What kind of failure it kept answering with.
-        give_up_reason: Which limit ran out — the attempts or the waiting budget.
+        give_up_reason: Which limit ran out — the attempts, the waiting budget or the
+            deadline for the request as a whole.
         last_status_code: The status of the final attempt, if one arrived.
     """
 

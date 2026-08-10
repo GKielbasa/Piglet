@@ -3,11 +3,24 @@ import dataclasses
 import pytest
 
 from piglet.domain.http.request import HTTPMethod, HTTPRequest
+from piglet.errors import InvalidRequestError
 
 
 def test_empty_url_is_rejected_by_name() -> None:
     with pytest.raises(ValueError, match="url"):
         HTTPRequest(HTTPMethod.GET, "   ")
+
+
+def test_an_empty_url_is_refused_as_a_failure_of_this_library() -> None:
+    with pytest.raises(InvalidRequestError):
+        HTTPRequest(HTTPMethod.GET, "   ")
+
+
+def test_a_refused_request_is_still_a_value_error() -> None:
+    with pytest.raises(ValueError) as refused:
+        HTTPRequest(HTTPMethod.GET, "   ")
+
+    assert isinstance(refused.value, InvalidRequestError)
 
 
 def test_a_verb_outside_the_closed_set_is_rejected() -> None:
@@ -25,7 +38,7 @@ def test_post_and_patch_are_not_idempotent(method: HTTPMethod) -> None:
     assert method.is_idempotent is False
 
 
-# The four below pass a plain string on purpose. Annotations vanish at runtime, so a verb
+# The five below pass a plain string on purpose. Annotations vanish at runtime, so a verb
 # read from a file or from configuration arrives exactly like this; both type checkers are
 # right to object, and the tests exist because reality does not honour the annotation.
 def test_a_verb_given_as_text_becomes_the_enum_member() -> None:
@@ -38,6 +51,11 @@ def test_a_verb_given_as_text_can_still_say_whether_it_may_be_repeated() -> None
 
 def test_a_verb_given_as_text_outside_the_closed_set_is_rejected() -> None:
     with pytest.raises(ValueError, match="SEARCH"):
+        HTTPRequest("SEARCH", "https://example.com")  # type: ignore[arg-type]
+
+
+def test_a_verb_the_request_cannot_send_is_refused_as_a_failure_of_this_library() -> None:
+    with pytest.raises(InvalidRequestError):
         HTTPRequest("SEARCH", "https://example.com")  # type: ignore[arg-type]
 
 

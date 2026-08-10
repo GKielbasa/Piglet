@@ -41,5 +41,8 @@ def test_a_profile_may_call_throttling_what_another_calls_transient() -> None:
 def test_the_profile_is_immutable() -> None:
     profile = ServiceProfile()
 
+    # The assignment is the test, so both checkers are right to reject it. `frozen=True`
+    # is enforced at runtime and that is what has to be proven — a profile shared between
+    # clients would otherwise be editable by any of them.
     with pytest.raises(dataclasses.FrozenInstanceError):
         profile.transient_statuses = frozenset({418})  # type: ignore[misc]
