@@ -148,9 +148,10 @@ inaczej monitoring alarmuje przy każdej próbie, która i tak się udała za dr
 | klasa porażki w dzienniku | brak — jest status, nie ma powodu rezygnacji |
 | kod błędu z ciała przed statusem | brak — i słusznie, to należy do profilu serwisu |
 
-Najpoważniejsza pozycja to ponawianie POST-ów. W kursie skutek jest łagodny (powtórzony
-`/verify` niczego nie psuje), ale narzędzie ma być uniwersalne — a pierwsze API z
-płatnościami albo z tworzeniem zasobów zamienia tę wygodę w duplikaty.
+Najpoważniejsza pozycja to ponawianie POST-ów. Przy API, którego POST tylko zgłasza wynik do
+sprawdzenia, skutek jest łagodny — powtórzenie niczego nie psuje. Ale narzędzie ma być
+uniwersalne, a pierwsze API z płatnościami albo z tworzeniem zasobów zamienia tę wygodę
+w duplikaty.
 
 ---
 

@@ -58,8 +58,8 @@ adresie. Powód jest przyziemny: URL trafia do logów serwera, do proxy, do hist
 przeglądarki, do nagłówka `Referer` i do każdego systemu monitoringu po drodze — a ciało i
 nagłówki nie.
 
-Problem: **to nie zawsze jest twoja decyzja.** API kursu AI_devs trzyma klucz w ścieżce
-(`/data/{apikey}/people.csv`), więc każde żądanie ma sekret w adresie i nie da się tego
+Problem: **to nie zawsze jest twoja decyzja.** Bywają API, które trzymają klucz w ścieżce
+(`/data/{apikey}/zasob.csv`) — wtedy każde żądanie ma sekret w adresie i nie da się tego
 obejść.
 
 Co wtedy robisz — i to jest realna konsekwencja projektowa, nie kosmetyka:
