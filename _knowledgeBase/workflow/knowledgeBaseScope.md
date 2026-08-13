@@ -41,7 +41,7 @@ z naszego drzewa albo treści zadania z kursu — wychodzi.
 
 | Rodzaj treści | Miejsce |
 |---|---|
-| treść zadania z kursu, endpointy, format odpowiedzi | `_tasks/<lekcja>-<nazwa>.md` |
+| treść zadania z kursu, endpointy, format odpowiedzi | `_tasks/<lekcja>-<nazwa>.md` — **gitignored**, jak `_teoria/` |
 | stan projektu, czego brakuje, co gdzie leży | `piglet/docs/` |
 | decyzja architektoniczna i jej uzasadnienie | `piglet/docs/adr/` |
 | notatki robocze jednego kroku | `.piglet-work/` (gitignored) |

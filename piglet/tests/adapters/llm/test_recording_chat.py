@@ -1,0 +1,122 @@
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from piglet.adapters.llm.recording_chat import RecordingChatModel
+from piglet.domain.llm.chat import (
+    ChatCompletion,
+    ChatMessage,
+    ChatRequest,
+    FinishReason,
+    ResponseSchema,
+    Role,
+    TokenUsage,
+)
+from piglet.errors import ModelCallFailedError, PigletError
+
+ANSWER = ChatCompletion("Two.", "test/model", FinishReason.STOP, TokenUsage(11, 2, 0.000042))
+QUESTION = ChatRequest([ChatMessage(Role.USER, "How many moons does Mars have?")], prompt_name="moons")
+SCHEMA = ResponseSchema("moon_count", {"type": "object", "properties": {"count": {"type": "integer"}}})
+
+
+class ScriptedModel:
+    """Answers with what it was handed, or raises it when it is a failure."""
+
+    def __init__(self, *answers: ChatCompletion | PigletError) -> None:
+        self.scripted = list(answers)
+        self.requests: list[ChatRequest] = []
+
+    async def complete(self, request: ChatRequest) -> ChatCompletion:
+        self.requests.append(request)
+        answer = self.scripted.pop(0) if len(self.scripted) > 1 else self.scripted[0]
+        if isinstance(answer, PigletError):
+            raise answer
+        return answer
+
+
+def written(directory: Path) -> list[dict[str, Any]]:
+    """Every exchange written to a directory, in the order the files are numbered."""
+    return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.iterdir())]
+
+
+def file_names(directory: Path) -> list[str]:
+    """The names of the files written to a directory, sorted."""
+    return sorted(path.name for path in directory.iterdir())
+
+
+async def test_a_finished_exchange_is_written_as_one_file(tmp_path: Path) -> None:
+    await RecordingChatModel(ScriptedModel(ANSWER), tmp_path).complete(QUESTION)
+
+    assert file_names(tmp_path) == ["0001.json"]
+
+
+async def test_files_are_numbered_in_the_order_the_calls_were_made(tmp_path: Path) -> None:
+    model = RecordingChatModel(ScriptedModel(ANSWER), tmp_path)
+
+    for _ in range(3):
+        await model.complete(QUESTION)
+
+    assert file_names(tmp_path) == ["0001.json", "0002.json", "0003.json"]
+
+
+async def test_the_messages_are_written_with_their_roles(tmp_path: Path) -> None:
+    conversation = ChatRequest([ChatMessage(Role.SYSTEM, "Answer briefly."), ChatMessage(Role.USER, "How many?")])
+
+    await RecordingChatModel(ScriptedModel(ANSWER), tmp_path).complete(conversation)
+
+    assert written(tmp_path)[0]["messages"] == [
+        {"role": "system", "content": "Answer briefly."},
+        {"role": "user", "content": "How many?"},
+    ]
+
+
+async def test_the_answer_is_written_with_what_it_cost(tmp_path: Path) -> None:
+    await RecordingChatModel(ScriptedModel(ANSWER), tmp_path).complete(QUESTION)
+
+    exchange = written(tmp_path)[0]
+    assert exchange["answer"]["content"] == "Two."
+    assert exchange["answer"]["model"] == "test/model"
+    assert exchange["answer"]["finish_reason"] == "stop"
+    assert exchange["answer"]["usage"] == {"prompt_tokens": 11, "completion_tokens": 2, "cost_usd": 0.000042}
+    assert exchange["prompt_name"] == "moons"
+
+
+async def test_the_schema_is_written_when_one_was_asked_for(tmp_path: Path) -> None:
+    asked = ChatRequest([ChatMessage(Role.USER, "How many?")], response_schema=SCHEMA)
+
+    await RecordingChatModel(ScriptedModel(ANSWER), tmp_path).complete(asked)
+
+    assert written(tmp_path)[0]["response_schema"] == {"name": "moon_count", "schema": dict(SCHEMA.json_schema)}
+
+
+async def test_a_call_without_a_schema_says_so(tmp_path: Path) -> None:
+    await RecordingChatModel(ScriptedModel(ANSWER), tmp_path).complete(QUESTION)
+
+    assert written(tmp_path)[0]["response_schema"] is None
+
+
+async def test_a_call_that_failed_is_written_too(tmp_path: Path) -> None:
+    failure = ModelCallFailedError("test/model", "upstream provider died", 502)
+
+    with pytest.raises(ModelCallFailedError):
+        await RecordingChatModel(ScriptedModel(failure), tmp_path).complete(QUESTION)
+
+    exchange = written(tmp_path)[0]
+    assert exchange["answer"] is None
+    assert exchange["failure"]["type"] == "ModelCallFailedError"
+    assert "upstream provider died" in exchange["failure"]["message"]
+    assert exchange["messages"][0]["content"] == "How many moons does Mars have?"
+
+
+async def test_the_answer_comes_back_unchanged(tmp_path: Path) -> None:
+    assert await RecordingChatModel(ScriptedModel(ANSWER), tmp_path).complete(QUESTION) == ANSWER
+
+
+async def test_the_request_reaches_the_model_underneath_untouched(tmp_path: Path) -> None:
+    inner = ScriptedModel(ANSWER)
+
+    await RecordingChatModel(inner, tmp_path).complete(QUESTION)
+
+    assert inner.requests == [QUESTION]

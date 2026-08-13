@@ -3,9 +3,15 @@
 Working rules for the `piglet` project. Binding on the coding agent (Claude Code).
 
 **Everything written to disk is English** — code, names, comments, docstrings, error
-messages, documentation, commit messages. No exceptions. Conversation with the author
-may be in Polish; the repository never is. The only Polish in this tree is `_teoria/`,
-which holds course transcripts as received.
+messages, documentation, commit messages. Conversation with the author may be in Polish.
+
+Two directories are exempt, and both on purpose:
+
+- `_teoria/` — course transcripts as received, not ours to rewrite.
+- `_knowledgeBase/` — **Polish**. It is not documentation of this project; it is the author's
+  own reading material, written to be reread in another job in two years. A note in a language
+  that costs effort to read is a note that does not get reread, and an unread note teaches
+  nothing. Everything under `piglet/` — code and `docs/` alike — stays English.
 
 ---
 
@@ -328,7 +334,10 @@ PEP 695 syntax (Python 3.12+), no imported `TypeVar`:
 class Cache[T]:
     def get(self, key: str) -> T | None: ...
 
-async def classify[T: BaseModel](records: Sequence[str], schema: type[T]) -> list[T]: ...
+
+async def classify[T: BaseModel](
+    records: Sequence[str], schema: type[T]
+) -> list[T]: ...
 ```
 
 Introduce a generic when the tool genuinely has to work for several types — not for
@@ -428,7 +437,7 @@ The decisions are made; the reasoning lives in `docs/adr/`.
 | Dependencies | **uv** | never `pip install` in this project |
 | Python | 3.12+ | PEP 695 generic syntax |
 | HTTP | **httpx** | sync and async under one API, swappable transport in tests |
-| LLM | **openai SDK** → OpenRouter | `base_url` pointed at OpenRouter, Chat Completions |
+| LLM | **our own client** → OpenRouter | Chat Completions over `adapters/http`, no SDK — ADR 0006 |
 | Tabular data | **pandas** | inside the processing layer, never at a boundary |
 | Validation / DTO | **pydantic** v2 | process boundaries |
 | Logging | **structlog** | logs as data (JSONL), not text — for evaluations from S03E01 |
@@ -524,6 +533,15 @@ the linter configuration instead.
 7. A thin task module, a run, the flag.
 8. Quality gates.
 9. Acceptance: execute the step's definition of done, paste the output (section 12).
+10. **Harvest** — twice, to two different readers, and only where the lesson left something:
+    - `docs/BEYOND_THE_COURSE.md` — what this lesson changes about arming **this** agent for
+      work after the course: what became reusable, what is still missing, which trap was found.
+      One row in its log, and an edit above it when the answer moved.
+    - `_knowledgeBase/` — the capability stripped of this project, written to be useful in
+      another job in two years. Polish, per section 0.
+
+    Skip either when the lesson gave it nothing. A note written to fill the slot is worse than
+    no note: it is the second one that stops the file from being reread.
 
 ### The subagents, and what they are for
 
@@ -553,6 +571,13 @@ there.
 
 - Lesson transcripts: `_teoria/` (Polish markdown, `sXXeYY-*.md`). Gitignored — course
   material, not ours to redistribute. There is no file for S01E03, only a video transcript.
+- Task statements: `_tasks/` (one file per task — endpoints, response format, criteria).
+  **Gitignored**, for the same reason `_teoria/` is, and a task never goes anywhere else:
+  not into `_knowledgeBase/`, not into a docstring, not into a commit message.
+- What a lesson teaches, stripped of the course: `_knowledgeBase/`, split into `python/`,
+  `agents/` and `workflow/`. Its scope rule is `_knowledgeBase/workflow/knowledgeBaseScope.md`
+  — universal knowledge only, so no endpoints, no task text, and no "what this means for
+  `piglet`" sections. Those belong to `_tasks/` and `docs/` respectively.
 - Course map: `docs/COURSE_MAP.md`.
 - Architectural decisions: `docs/adr/`.
 

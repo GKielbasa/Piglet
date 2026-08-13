@@ -66,8 +66,7 @@ class HttpxTransport:
                 headers=dict(request.headers),
                 content=request.body,
             )
-        # `InvalidURL` sits outside httpx.HTTPError, so without it here an unusable
-        # address would leave this boundary as an httpx exception with no class.
+
         except (httpx.HTTPError, httpx.InvalidURL) as exc:
             raise TransportError(request.url, exc, _classify(exc), _may_have_been_processed(exc)) from exc
         return HTTPResponse(answer.status_code, dict(answer.headers), answer.content)

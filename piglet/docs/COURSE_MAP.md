@@ -12,7 +12,7 @@ Status: `—` not started · `WIP` in progress · `✓` done
 
 | Lesson | Technical capabilities | Module | Task | Status |
 |---|---|---|---|---|
-| S01E01 | structured outputs / JSON Schema, choosing a model, organising instructions in code, few/many-shot | `llm/`, `application/`, `adapters/http/` ✓ | **people** — CSV → filter → tag classification → `/verify` | — |
+| S01E01 | structured outputs / JSON Schema, choosing a model, organising instructions in code, few/many-shot | `domain/llm/`, `adapters/llm/`, `llm/`, `adapters/prompts/`, `application/`, `adapters/http/` ✓ | **people** — CSV → filter → tag classification → `/verify` | ✓ |
 | S01E02 | function calling, tool schemas, validation and guardrails, workflow vs agent, query transformation, dynamic tool lists, prompt injection | `tools/`, `agent/` | **findhim** — orchestrating `/api/location` and `/api/accesslevel`, matching geography to the site | — |
 | S01E03 | threat modeling, least privilege, dry run + HITL, audit trail, secrets management | `app/config.py` ✓, `adapters/logging/` ✓, `application/` (dry run) | ⚠️ **no lesson file in `_teoria/`** — a video transcript only | — |
 | S01E04 | vision, PDF, audio, video, generating and editing images | `llm/` (multimodal), `adapters/http/` ✓ | **sendit** — crawl the markdown documentation, vision over its images, a rigid declaration template | — |
@@ -62,7 +62,17 @@ Status: `—` not started · `WIP` in progress · `✓` done
 
 The primitives that recur across S01E01–E05 are the ones built first. Three of the five exist:
 
-1. `adapters/http/` ✓ — retry, backoff, deferring to `Retry-After` (forced by S01E05)
+1. `adapters/http/` ✓ — retry, backoff, deferring to `Retry-After` (forced by S01E05). **One gap
+   left open on purpose:** `HttpxTransport.send` catches `(httpx.HTTPError, httpx.InvalidURL)`, so
+   `httpx.StreamError`, `httpx.CookieConflict` and the `RuntimeError` httpx raises for a closed
+   client leave the adapter as themselves — past `ResilientHTTPClient`, which catches only
+   `TransportError`, and past the CLI, which catches only `PigletError`. Nothing can trigger it
+   today: we neither stream nor read cookies, and the one `send` call site sits inside an
+   `async with`. It arms the moment a client outlives that block — an agent holding one between
+   steps — and such a failure writes no `http_attempt_finished` entry at all, which makes it
+   S03E01's problem as much as this module's. The fix, when it is due: a catch-all re-raising
+   `TransportError`, with the argument building hoisted out of the `try` so a bug of ours is not
+   dressed as a network failure.
 2. `adapters/cache/` ✓ — re-running a task must cost zero requests
 3. `adapters/logging/` ✓ — JSONL per call; the foundation for S03E01, which is why it exists from
    S01E01 rather than from season 3. **One known debt to settle when S03E01 turns the log into an
@@ -70,7 +80,8 @@ The primitives that recur across S01E01–E05 are the ones built first. Three of
    `ResilientHTTPClient._record_attempt` binds its fields progressively, `_recall` hand-rolls a
    second version with a different field set for a cache hit. One event name, two schemas, so every
    consumer has to handle both. Cheap to unify now, awkward once something reads it.
-4. `llm/` — completions, enforced response schemas, vision, tool calling
+4. `llm/` with `adapters/llm/` — the wire in the adapter, the capabilities above the port, so a
+   second provider is a new adapter and nothing above it moves (ADR 0006)
 5. `application/` — the task modules and the platform client: fetching input, `/verify`, extracting
    the answer token
 

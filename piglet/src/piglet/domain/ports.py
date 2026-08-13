@@ -9,8 +9,35 @@ from typing import Protocol
 from piglet.domain.http.cache_key import CacheKey
 from piglet.domain.http.request import HTTPRequest
 from piglet.domain.http.response import HTTPResponse
+from piglet.domain.llm.chat import ChatCompletion, ChatRequest
 
-__all__ = ["HTTPTransport", "ResponseCache", "Sleeper"]
+__all__ = ["ChatModel", "HTTPTransport", "ResponseCache", "Sleeper"]
+
+
+class ChatModel(Protocol):
+    """Answers one request from a language model.
+
+    Stateless by contract: a request carries its whole conversation, so an implementation holds
+    a connection and credentials and nothing else. Keeping the method single and narrow is what
+    lets the capabilities above it — enforced schemas, batching — be written once for every
+    provider rather than once per provider.
+    """
+
+    async def complete(self, request: ChatRequest) -> ChatCompletion:
+        """Ask the model, and wait for what it says.
+
+        Args:
+            request: What to ask.
+
+        Returns:
+            The answer, together with what it cost.
+
+        Raises:
+            ModelCallFailedError: If the provider's answer reports a failure of its own.
+            ModelAnswerTruncatedError: If generation stopped at a token ceiling, leaving a
+                fragment rather than an answer.
+        """
+        ...
 
 
 class HTTPTransport(Protocol):

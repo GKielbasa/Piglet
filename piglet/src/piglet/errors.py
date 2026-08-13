@@ -7,6 +7,7 @@ error has its own type; nothing is ever swallowed.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 # Annotations are strings at runtime under the import above, so these three are needed
@@ -25,8 +26,14 @@ if TYPE_CHECKING:
 __all__ = [
     "HTTPError",
     "InvalidRequestError",
+    "MalformedPromptError",
+    "ModelAnswerTruncatedError",
+    "ModelCallFailedError",
+    "ModelError",
     "PigletError",
+    "PromptNotFoundError",
     "RetryExhaustedError",
+    "SchemaViolationError",
     "TransportError",
     "UnsafeToRepeatError",
 ]
@@ -145,3 +152,105 @@ class UnsafeToRepeatError(PigletError):
         self.method = method
         self.attempts = attempts
         self.status_code = status_code
+
+
+class ModelError(PigletError):
+    """A call reached the model provider, and what came back cannot be used.
+
+    Separate from the failures above it because the exchange itself succeeded. A caller that
+    needs to tell "the network is bad" from "the model is not cooperating" catches this.
+    """
+
+
+class ModelCallFailedError(ModelError):
+    """The provider's own answer says the call failed.
+
+    A failure that happens while the model is generating arrives inside a successful response,
+    so nothing below this layer can see it: the HTTP client reads a 200 as success, never
+    retries it, and would remember it if it were allowed to cache.
+
+    Attributes:
+        model: The model that was asked.
+        provider_message: What the provider said went wrong, in its own words.
+        code: The code it named, or None when it named none.
+    """
+
+    def __init__(self, model: str, provider_message: str, code: int | None = None) -> None:
+        named = f" (code {code})" if code is not None else ""
+        super().__init__(f"{model} reported a failure{named}: {provider_message}")
+        self.model = model
+        self.provider_message = provider_message
+        self.code = code
+
+
+class ModelAnswerTruncatedError(ModelError):
+    """Generation stopped at a token ceiling, so the answer is a fragment.
+
+    Its own class rather than one more `ModelCallFailedError`, because this is the failure that
+    names its own remedy: the ceiling was too low, and repeating the call unchanged reaches it
+    again in the same place.
+
+    Attributes:
+        model: The model that answered.
+        completion_tokens: How many tokens it produced before stopping.
+        max_output_tokens: The ceiling we asked for, or None when the provider's own stopped it.
+    """
+
+    def __init__(self, model: str, completion_tokens: int, max_output_tokens: int | None = None) -> None:
+        ceiling = (
+            f"the ceiling of {max_output_tokens}" if max_output_tokens is not None else "the provider's own ceiling"
+        )
+        super().__init__(f"{model} hit {ceiling} after {completion_tokens} token(s); the answer is incomplete")
+        self.model = model
+        self.completion_tokens = completion_tokens
+        self.max_output_tokens = max_output_tokens
+
+
+class SchemaViolationError(ModelError):
+    """The answer arrived whole and does not honour the schema it was asked for.
+
+    An enforced schema guarantees a shape, not a count: a batch can come back short, or with one
+    index repeated, while every field in it is well formed.
+
+    Attributes:
+        schema_name: The schema the answer was measured against.
+        reason: What does not fit, in one line.
+        answer_preview: The beginning of what came back, or None when none was kept.
+    """
+
+    def __init__(self, schema_name: str, reason: str, answer_preview: str | None = None) -> None:
+        super().__init__(f"the answer does not match schema {schema_name!r}: {reason}")
+        self.schema_name = schema_name
+        self.reason = reason
+        self.answer_preview = answer_preview
+
+
+class PromptNotFoundError(PigletError):
+    """Nothing on disk answers to that prompt name.
+
+    Attributes:
+        name: The prompt that was asked for.
+        directory: Where it was looked for, so a wrong working directory says so itself.
+    """
+
+    def __init__(self, name: str, directory: Path) -> None:
+        super().__init__(f"no prompt named {name!r} in {directory}")
+        self.name = name
+        self.directory = directory
+
+
+class MalformedPromptError(PigletError):
+    """A prompt file exists and cannot be read as a prompt.
+
+    Raised rather than tolerated, because the alternative is a run that quietly instructs a
+    model with an empty string or with a key nobody reads.
+
+    Attributes:
+        name: The prompt that was being read.
+        reason: What is wrong with it.
+    """
+
+    def __init__(self, name: str, reason: str) -> None:
+        super().__init__(f"prompt {name!r} cannot be read: {reason}")
+        self.name = name
+        self.reason = reason

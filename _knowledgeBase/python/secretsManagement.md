@@ -91,6 +91,7 @@ W Pythonie denylistę robi się jako procesor `structlog`, wpięty **przed** ren
 ```python
 def _build_redactor(secrets: Sequence[SecretStr]) -> Processor:
     needles = tuple(s.get_secret_value() for s in secrets if s.get_secret_value())
+
     def redact(logger, method_name, event_dict):
         for key, value in event_dict.items():
             if isinstance(value, str):
@@ -98,6 +99,7 @@ def _build_redactor(secrets: Sequence[SecretStr]) -> Processor:
                     value = value.replace(needle, "***")
                 event_dict[key] = value
         return event_dict
+
     return redact
 ```
 
