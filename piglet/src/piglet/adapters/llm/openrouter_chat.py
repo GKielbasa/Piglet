@@ -30,9 +30,14 @@ class _Outcome(StrEnum):
 
 
 class _WireMessage(BaseModel):
-    """One message as the endpoint returns it."""
+    """One message as the endpoint returns it.
+
+    `content` and `refusal` are both optional and exactly one of them arrives: a model that
+    declines to answer says so in `refusal` and leaves `content` null.
+    """
 
     content: str | None = None
+    refusal: str | None = None
 
 
 class _WireChoice(BaseModel):
@@ -125,9 +130,14 @@ class OpenRouterChatModel:
         started = time.perf_counter()
         outcome = _Outcome.HTTP_FAILURE
         completion: ChatCompletion | None = None
+        # Read before the answer is judged, and kept whatever the judgement is: a call that
+        # ends in a failure has still been paid for, and an entry without its cost is the one
+        # that makes a run's total look smaller than the invoice.
+        usage: TokenUsage | None = None
         try:
-            response = await self._send(request, model)
-            completion = _read_answer(response, model, request.max_output_tokens)
+            answer = _parse(await self._send(request, model), model)
+            usage = _usage_of(answer)
+            completion = _read_answer(answer, model, usage, request.max_output_tokens)
             outcome = _Outcome.OK
             return completion
         except ModelCallFailedError:
@@ -138,7 +148,7 @@ class OpenRouterChatModel:
             raise
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 3)
-            self._record_call(request, model, outcome, duration_ms, completion)
+            self._record_call(request, model, outcome, duration_ms, completion, usage)
 
     async def _send(self, request: ChatRequest, model: str) -> HTTPResponse:
         """Put one request on the wire.
@@ -185,6 +195,7 @@ class OpenRouterChatModel:
         outcome: _Outcome,
         duration_ms: float,
         completion: ChatCompletion | None,
+        usage: TokenUsage | None,
     ) -> None:
         """Write the entry for one finished call, however it finished.
 
@@ -198,19 +209,19 @@ class OpenRouterChatModel:
             outcome: How the call ended.
             duration_ms: How long it took altogether, retries included.
             completion: The answer, or None when none was understood.
+            usage: What the call consumed, or None when nothing readable came back.
         """
         entry = self.logger.bind(model=model, outcome=outcome, duration_ms=duration_ms)
         if request.prompt_name is not None:
             entry = entry.bind(prompt_name=request.prompt_name)
         if completion is not None:
-            entry = entry.bind(
-                model_answered=completion.model,
-                finish_reason=completion.finish_reason,
-                prompt_tokens=completion.usage.prompt_tokens,
-                completion_tokens=completion.usage.completion_tokens,
-            )
-            if completion.usage.cost_usd is not None:
-                entry = entry.bind(cost_usd=completion.usage.cost_usd)
+            entry = entry.bind(model_answered=completion.model, finish_reason=completion.finish_reason)
+        # A truncated call was billed for tokens without producing an answer, so this cannot be
+        # read off the completion. Zero is the absence of a cost rather than a cost of nothing.
+        if usage is not None and (usage.prompt_tokens or usage.completion_tokens):
+            entry = entry.bind(prompt_tokens=usage.prompt_tokens, completion_tokens=usage.completion_tokens)
+            if usage.cost_usd is not None:
+                entry = entry.bind(cost_usd=usage.cost_usd)
         entry.info("llm_call_finished")
 
 
@@ -251,30 +262,60 @@ def _build_body(request: ChatRequest, model: str) -> dict[str, Any]:
     return body
 
 
-def _read_answer(response: HTTPResponse, model: str, max_output_tokens: int | None) -> ChatCompletion:
-    """Turn one successful response into an answer, or into the failure it describes.
+def _parse(response: HTTPResponse, model: str) -> _WireAnswer:
+    """Read one successful response as the shape the endpoint documents.
+
+    Separate from reading its meaning, because what the call consumed is in there even when
+    what it says is a failure — and a failure that was billed has to be logged with its price.
+
+    Args:
+        response: What came back.
+        model: Which model was asked, for the failure that names one.
+
+    Returns:
+        The response as a value, whether it holds an answer or an error.
+
+    Raises:
+        ModelCallFailedError: If the body cannot be read at all.
+    """
+    try:
+        return _WireAnswer.model_validate_json(response.body)
+    except ValidationError as unreadable:
+        raise ModelCallFailedError(model, f"the response could not be read: {unreadable}") from unreadable
+
+
+def _usage_of(answer: _WireAnswer) -> TokenUsage:
+    """What the call consumed, in our own terms.
+
+    Args:
+        answer: The parsed response.
+
+    Returns:
+        The tokens, and the price when the provider named one.
+    """
+    return TokenUsage(answer.usage.prompt_tokens, answer.usage.completion_tokens, answer.usage.cost)
+
+
+def _read_answer(answer: _WireAnswer, model: str, usage: TokenUsage, max_output_tokens: int | None) -> ChatCompletion:
+    """Turn one parsed response into an answer, or into the failure it describes.
 
     A status of 200 is not agreement: a failure that happens while the model is generating is
     reported inside a successful response, so this is the first place able to see it.
 
     Args:
-        response: What came back.
+        answer: The parsed response.
         model: Which model was asked, for the failures that name one.
+        usage: What the call consumed, already read.
         max_output_tokens: The ceiling that was asked for, if any.
 
     Returns:
         The answer.
 
     Raises:
-        ModelCallFailedError: If the body reports a failure, cannot be read, or does not hold
-            exactly one choice.
+        ModelCallFailedError: If the body reports a failure, does not hold exactly one choice,
+            or holds one carrying no text.
         ModelAnswerTruncatedError: If generation stopped at the token ceiling.
     """
-    try:
-        answer = _WireAnswer.model_validate_json(response.body)
-    except ValidationError as unreadable:
-        raise ModelCallFailedError(model, f"the response could not be read: {unreadable}") from unreadable
-
     if answer.error is not None:
         raise ModelCallFailedError(model, answer.error.message, answer.error.code)
     if len(answer.choices) != 1:
@@ -282,11 +323,30 @@ def _read_answer(response: HTTPResponse, model: str, max_output_tokens: int | No
 
     choice = answer.choices[0]
     answered_by = answer.model or model
-    usage = TokenUsage(answer.usage.prompt_tokens, answer.usage.completion_tokens, answer.usage.cost)
     finish_reason = _finish_reason(choice.finish_reason)
     if finish_reason is FinishReason.LENGTH:
-        raise ModelAnswerTruncatedError(answered_by, usage.completion_tokens, max_output_tokens)
-    return ChatCompletion(choice.message.content or "", answered_by, finish_reason, usage)
+        raise ModelAnswerTruncatedError(answered_by, usage, max_output_tokens)
+    if choice.message.content is None:
+        # Letting this become an empty answer is the expensive reading of it: the call was
+        # billed, the caller receives a blank string, and a schema asked for further up then
+        # takes the blame for text that was never produced.
+        raise ModelCallFailedError(answered_by, _why_there_is_no_text(choice.message))
+    return ChatCompletion(choice.message.content, answered_by, finish_reason, usage)
+
+
+def _why_there_is_no_text(message: _WireMessage) -> str:
+    """Say what arrived in place of an answer.
+
+    Args:
+        message: The message that carried no content.
+
+    Returns:
+        The model's own refusal where it gave one, and a plain statement of the fact where it
+        did not.
+    """
+    if message.refusal is not None:
+        return f"the model declined to answer: {message.refusal}"
+    return "the answer carried no text at all"
 
 
 def _finish_reason(named: str | None) -> FinishReason:

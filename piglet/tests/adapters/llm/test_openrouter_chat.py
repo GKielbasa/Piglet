@@ -1,11 +1,9 @@
 import json
-from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
-import structlog
 from pydantic import SecretStr
 
 from piglet.adapters.http.resilient_client import ResilientHTTPClient
@@ -47,13 +45,6 @@ class ScriptedTransport:
 
 async def no_waiting(seconds: float, /) -> None:
     return None
-
-
-@pytest.fixture(autouse=True)
-def clean_structlog() -> Iterator[None]:
-    yield
-    structlog.contextvars.clear_contextvars()
-    structlog.reset_defaults()
 
 
 def build_model(*answers: HTTPResponse) -> tuple[ScriptedTransport, OpenRouterChatModel]:
@@ -230,7 +221,7 @@ async def test_an_answer_cut_off_at_the_ceiling_raises() -> None:
         await model.complete(ChatRequest([ChatMessage(Role.USER, "Hi.")], max_output_tokens=64))
 
     assert raised.value.max_output_tokens == 64
-    assert raised.value.completion_tokens == 2
+    assert raised.value.usage.completion_tokens == 2
 
 
 async def test_an_error_inside_a_successful_response_raises() -> None:

@@ -77,8 +77,8 @@ async def classify_in_batches[T: BaseModel](
     """
     if not records:
         return []
-    # Deduplicated before anything is sent. The dictionary keeps first-seen order, so batches
-    # stay stable between runs over the same input.
+    # A dictionary rather than a set: it keeps first-seen order, so batches stay stable
+    # between runs over the same input.
     unique = list(dict.fromkeys(records))
     batches = [unique[start : start + batch_size] for start in range(0, len(unique), batch_size)]
     at_once = asyncio.Semaphore(max_concurrent_batches)

@@ -1,10 +1,12 @@
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from piglet.adapters.llm.recording_chat import RecordingChatModel
+from piglet.adapters.logging.setup import configure_logging
 from piglet.domain.llm.chat import (
     ChatCompletion,
     ChatMessage,
@@ -44,6 +46,19 @@ def written(directory: Path) -> list[dict[str, Any]]:
 def file_names(directory: Path) -> list[str]:
     """The names of the files written to a directory, sorted."""
     return sorted(path.name for path in directory.iterdir())
+
+
+def unwritable_directory(tmp_path: Path) -> Path:
+    """A path no directory can be created at, because a file sits where its parent would go."""
+    blocked = tmp_path / "blocked"
+    blocked.write_text("not a directory", encoding="utf-8")
+    return blocked / "exchanges"
+
+
+def read_entries(log_dir: Path) -> list[dict[str, Any]]:
+    """Every entry written to the log, in order."""
+    log_file = log_dir / f"{date.today().isoformat()}.jsonl"
+    return [json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines()]
 
 
 async def test_a_finished_exchange_is_written_as_one_file(tmp_path: Path) -> None:
@@ -120,3 +135,26 @@ async def test_the_request_reaches_the_model_underneath_untouched(tmp_path: Path
     await RecordingChatModel(inner, tmp_path).complete(QUESTION)
 
     assert inner.requests == [QUESTION]
+
+
+async def test_a_directory_that_cannot_be_written_does_not_replace_the_answer(tmp_path: Path) -> None:
+    answer = await RecordingChatModel(ScriptedModel(ANSWER), unwritable_directory(tmp_path)).complete(QUESTION)
+
+    assert answer == ANSWER
+
+
+async def test_it_does_not_replace_the_failure_underneath_either(tmp_path: Path) -> None:
+    failure = ModelCallFailedError("test/model", "upstream provider died", 502)
+
+    with pytest.raises(ModelCallFailedError):
+        await RecordingChatModel(ScriptedModel(failure), unwritable_directory(tmp_path)).complete(QUESTION)
+
+
+async def test_an_exchange_that_could_not_be_written_says_so_in_the_log(tmp_path: Path) -> None:
+    configure_logging(tmp_path / "logs")
+
+    await RecordingChatModel(ScriptedModel(ANSWER), unwritable_directory(tmp_path)).complete(QUESTION)
+
+    entries = read_entries(tmp_path / "logs")
+    assert [entry["event"] for entry in entries] == ["llm_exchange_not_recorded"]
+    assert entries[0]["level"] == "error"

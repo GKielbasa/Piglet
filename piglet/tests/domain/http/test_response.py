@@ -20,3 +20,9 @@ def test_body_stays_bytes_and_decodes_on_demand() -> None:
     response = HTTPResponse(200, {}, b"caf\xc3\xa9 \xe2\x98\x95")
 
     assert response.text == "café ☕"
+
+
+def test_a_byte_order_mark_does_not_survive_into_the_text() -> None:
+    response = HTTPResponse(200, {}, b"\xef\xbb\xbfcolumn,other\nvalue,another\n")
+
+    assert response.text == "column,other\nvalue,another\n"

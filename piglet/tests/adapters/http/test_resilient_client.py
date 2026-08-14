@@ -1,14 +1,12 @@
 import asyncio
 import json
 import time
-from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
-import structlog
 from pydantic import SecretStr
 
 from piglet.adapters.cache.filesystem_cache import FilesystemResponseCache
@@ -92,13 +90,6 @@ class RecordedSleeper:
 
     async def __call__(self, seconds: float) -> None:
         self.waits.append(seconds)
-
-
-@pytest.fixture(autouse=True)
-def clean_structlog() -> Iterator[None]:
-    yield
-    structlog.contextvars.clear_contextvars()
-    structlog.reset_defaults()
 
 
 def read_entries(log_dir: Path) -> list[dict[str, Any]]:

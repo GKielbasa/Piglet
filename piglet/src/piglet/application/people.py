@@ -1,4 +1,4 @@
-"""S01E01: from a file of people, the men born in Grudziądz who work in transport."""
+"""One course task, in two passes: what a comparison can settle, then what only prose can."""
 
 import csv
 from collections.abc import Iterable

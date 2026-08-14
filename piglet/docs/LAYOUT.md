@@ -109,8 +109,14 @@ domain/       meanings and decisions      ──▶ nothing
 Arrows point one way. `domain/` imports nothing from above and does not know the rest exists,
 which is why its tests need neither network nor disk and finish in milliseconds.
 
-One edge crosses back: `app/cli.py` imports `application/tasks.py`, because an entry point has to
-reach a task. It stays generic — the CLI takes a task's name as an argument and never names one.
+Two edges cross back, and both are about **assembly** rather than about the domain:
+
+- `app/cli.py` imports `application/tasks.py`, because an entry point has to reach a task. It stays
+  generic — the CLI takes a task's name as an argument and never names one.
+- `application/tasks.py` imports `app/config.py` and `app/container.py`, because it is itself a
+  composition root: the one for the layer that knows the course. `app/container.py` may not know
+  this platform exists, so the objects that do are assembled one level above it instead. The edge
+  ends there — no task module imports `app/`, and nothing in `app/` imports a task module.
 
 ## The one rule a hook enforces
 

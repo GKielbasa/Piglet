@@ -32,8 +32,14 @@ class HTTPResponse:
 
     @property
     def text(self) -> str:
-        """The body decoded as UTF-8, with undecodable bytes replaced."""
-        return self.body.decode("utf-8", errors="replace")
+        """The body decoded as UTF-8, with undecodable bytes replaced.
+
+        A byte order mark belongs to the encoding rather than to the text, so it is dropped
+        here: a spreadsheet exports one at the head of every file, and it would otherwise
+        become part of whatever the first line means — the first column's name in a CSV, the
+        first key in a JSON document.
+        """
+        return self.body.decode("utf-8-sig", errors="replace")
 
     def header(self, name: str) -> str | None:
         """Look up one header, ignoring case.

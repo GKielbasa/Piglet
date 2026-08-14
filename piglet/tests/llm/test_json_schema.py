@@ -2,8 +2,10 @@ import json
 from enum import StrEnum
 from typing import Any, cast
 
+import pytest
 from pydantic import BaseModel, Field
 
+from piglet.errors import InvalidRequestError
 from piglet.llm.json_schema import to_strict_json_schema
 
 
@@ -119,3 +121,38 @@ def test_a_model_reached_through_a_list_is_made_strict() -> None:
 
 def test_the_result_is_serialisable() -> None:
     assert json.loads(json.dumps(strict_schema_of(Batch)))["type"] == "object"
+
+
+def test_a_mapping_is_refused_and_the_field_is_named() -> None:
+    class WithMapping(BaseModel):
+        counts: dict[str, int]
+
+    with pytest.raises(InvalidRequestError, match=r"WithMapping\.counts"):
+        to_strict_json_schema(WithMapping)
+
+
+def test_a_mapping_of_anything_is_refused_too() -> None:
+    class WithLooseMapping(BaseModel):
+        payload: dict[str, Any]
+
+    with pytest.raises(InvalidRequestError, match=r"WithLooseMapping\.payload"):
+        to_strict_json_schema(WithLooseMapping)
+
+
+def test_a_fixed_length_tuple_is_refused() -> None:
+    class WithTuple(BaseModel):
+        pair: tuple[int, str]
+
+    with pytest.raises(InvalidRequestError, match=r"WithTuple\.pair"):
+        to_strict_json_schema(WithTuple)
+
+
+def test_a_refusal_names_the_nested_model_it_was_declared_in() -> None:
+    class Nested(BaseModel):
+        counts: dict[str, int]
+
+    class Outer(BaseModel):
+        items: list[Nested]
+
+    with pytest.raises(InvalidRequestError, match=r"Nested\.counts"):
+        to_strict_json_schema(Outer)

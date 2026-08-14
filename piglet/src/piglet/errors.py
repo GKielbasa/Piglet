@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from piglet.domain.http.request import HTTPMethod
     from piglet.domain.http.retry_policy import GiveUpReason
     from piglet.domain.http.service_profile import FailureClass
+    from piglet.domain.llm.chat import TokenUsage
 
 __all__ = [
     "HTTPError",
@@ -192,17 +193,19 @@ class ModelAnswerTruncatedError(ModelError):
 
     Attributes:
         model: The model that answered.
-        completion_tokens: How many tokens it produced before stopping.
+        usage: What the fragment cost. It was generated in full and is billed in full, so this
+            is the bill rather than an estimate — and the reason the failure carries it at all,
+            since a caller keeping account of what a run spends must count this call too.
         max_output_tokens: The ceiling we asked for, or None when the provider's own stopped it.
     """
 
-    def __init__(self, model: str, completion_tokens: int, max_output_tokens: int | None = None) -> None:
+    def __init__(self, model: str, usage: TokenUsage, max_output_tokens: int | None = None) -> None:
         ceiling = (
             f"the ceiling of {max_output_tokens}" if max_output_tokens is not None else "the provider's own ceiling"
         )
-        super().__init__(f"{model} hit {ceiling} after {completion_tokens} token(s); the answer is incomplete")
+        super().__init__(f"{model} hit {ceiling} after {usage.completion_tokens} token(s); the answer is incomplete")
         self.model = model
-        self.completion_tokens = completion_tokens
+        self.usage = usage
         self.max_output_tokens = max_output_tokens
 
 

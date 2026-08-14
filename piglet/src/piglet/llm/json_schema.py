@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from piglet.domain.llm.chat import ResponseSchema
+from piglet.errors import InvalidRequestError
 
 __all__ = ["to_strict_json_schema"]
 
@@ -30,9 +31,12 @@ def to_strict_json_schema(model: type[BaseModel]) -> ResponseSchema:
 
     Returns:
         The schema, named after the model, ready to travel unchanged.
+
+    Raises:
+        InvalidRequestError: If the model declares a field strict mode cannot enforce.
     """
     schema: dict[str, Any] = model.model_json_schema()
-    _make_strict(schema)
+    _make_strict(schema, model.__name__)
     return ResponseSchema(name=_acceptable_name(model.__name__), json_schema=schema)
 
 
@@ -52,12 +56,17 @@ def _acceptable_name(class_name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", class_name).strip("_")
 
 
-def _make_strict(node: dict[str, Any]) -> None:
+def _make_strict(node: dict[str, Any], where: str) -> None:
     """Rewrite one schema node, and everything nested in it, where it stands.
 
     Args:
         node: The node to rewrite.
+        where: Where this node sits in the model, so a refusal can name the field to change.
+
+    Raises:
+        InvalidRequestError: If this node, or one nested in it, cannot be enforced.
     """
+    _refuse_what_cannot_be_enforced(node, where)
     node.pop("title", None)
     node.pop("default", None)
 
@@ -68,11 +77,40 @@ def _make_strict(node: dict[str, Any]) -> None:
         # the model fills first is context for the field it fills next.
         node["required"] = list(properties)
 
-    for group in ("properties", "$defs"):
-        for child in node.get(group, {}).values():
-            _make_strict(child)
+    for name, child in node.get("properties", {}).items():
+        _make_strict(child, f"{where}.{name}")
+    # A definition is a model in its own right, so its own name replaces the path that reached it.
+    for name, child in node.get("$defs", {}).items():
+        _make_strict(child, name)
     for alternative in node.get("anyOf", []):
-        _make_strict(alternative)
+        _make_strict(alternative, where)
     items = node.get("items")
     if items is not None:
-        _make_strict(items)
+        _make_strict(items, f"{where}[]")
+
+
+def _refuse_what_cannot_be_enforced(node: dict[str, Any], where: str) -> None:
+    """Stop a schema the provider would reject before it travels.
+
+    Strict mode only enforces a shape it can close: every object names its properties and
+    forbids the rest. Two declarations cannot be closed — a mapping, whose keys are not known
+    before the answer arrives, and a fixed-length tuple, whose `prefixItems` strict mode does
+    not read. Left in, both come back as a 503 that names neither the field nor the reason.
+
+    Args:
+        node: The node to inspect.
+        where: Where it sits in the model.
+
+    Raises:
+        InvalidRequestError: If the node declares either of them.
+    """
+    if "prefixItems" in node:
+        raise InvalidRequestError(
+            f"{where}: a fixed-length tuple cannot be enforced in strict mode; declare a model instead"
+        )
+    additional = node.get("additionalProperties")
+    if additional is not None and additional is not False:
+        raise InvalidRequestError(
+            f"{where}: a mapping cannot be enforced in strict mode, because its keys are not known in "
+            "advance; declare a model, or a list of objects carrying the key as a field"
+        )

@@ -14,9 +14,8 @@ For each record:
    has to follow from that reasoning rather than arrive beside it.
 2. Choose every label that genuinely applies. A record may take several at once, and taking
    none of them is a real answer rather than a failure to decide.
-3. Where the record does not say enough to decide, use the value the schema offers for exactly
-   that, instead of the label that merely seems most likely. Guessing costs more than
-   admitting the record is silent.
+3. Where the record does not say enough to decide, answer with no labels at all, rather than with
+   the one that merely seems most likely. Guessing costs more than admitting the record is silent.
 
 The labels and their meanings are defined in the schema you answer with. Read each label's
 description as its definition: those descriptions are the instruction, not documentation.

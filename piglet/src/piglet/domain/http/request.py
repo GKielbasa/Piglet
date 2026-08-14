@@ -53,9 +53,8 @@ class HTTPRequest:
     def __post_init__(self) -> None:
         if not self.url.strip():
             raise InvalidRequestError("url must not be empty")
-        # Annotations vanish at runtime, so a verb arriving from a file or from
-        # configuration would otherwise reach the socket unchecked — and, still a plain
-        # string, would have no `is_idempotent` for the retry policy to ask about.
+        # A verb arriving from a file or from configuration would still be a plain string
+        # here, with no `is_idempotent` for the retry policy to ask about.
         try:
             method = HTTPMethod(self.method)
         except ValueError as unusable:

@@ -1,23 +1,12 @@
 import json
-from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 from typing import Any
 
-import pytest
 import structlog
 from pydantic import SecretStr
 
 from piglet.adapters.logging.setup import bind_run_id, configure_logging
-
-
-@pytest.fixture(autouse=True)
-def clean_structlog() -> Iterator[None]:
-    # structlog configuration is global; without a reset one test's log file would
-    # keep collecting the next test's entries.
-    yield
-    structlog.contextvars.clear_contextvars()
-    structlog.reset_defaults()
 
 
 def read_entries(log_dir: Path) -> list[dict[str, Any]]:

@@ -69,7 +69,13 @@ class RecordingChatModel:
     def _write(
         self, request: ChatRequest, answer: ChatCompletion | None = None, failure: PigletError | None = None
     ) -> None:
-        """Write one exchange as a JSON document.
+        """Write one exchange as a JSON document, or record that it could not be written.
+
+        A recorder observes; it may not change what it observes. A read-only directory or a
+        full disk would otherwise leave this method raising `OSError` — replacing an answer
+        that has already been paid for, or replacing the model's own failure with one about
+        the recording of it, which no caller of a `ChatModel` expects to catch. So the write
+        fails alone, at error level: not swallowed, and not passed on.
 
         Note that the log's redactor does not run here: a secret placed in a prompt would be
         written as it stands. Prompts are ours to write, so the rule is the one from section 11
@@ -80,7 +86,6 @@ class RecordingChatModel:
             answer: What came back, or None when nothing did.
             failure: What went wrong, or None when nothing did.
         """
-        self.directory.mkdir(parents=True, exist_ok=True)
         path = self.directory / f"{next(self._sequence):04d}.json"
         document: dict[str, Any] = {
             "prompt_name": request.prompt_name,
@@ -92,7 +97,12 @@ class RecordingChatModel:
             "answer": _describe_answer(answer),
             "failure": None if failure is None else {"type": type(failure).__name__, "message": str(failure)},
         }
-        path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as unwritable:
+            self.logger.error("llm_exchange_not_recorded", path=str(path), reason=str(unwritable))
+            return
         self.logger.info("llm_exchange_recorded", path=str(path), prompt_name=request.prompt_name)
 
 

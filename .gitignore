@@ -1,5 +1,7 @@
 _teoria/
 _exampleCode/
+_tasks/
+
 .env
 .env.*
 !.env.example
@@ -25,4 +27,3 @@ dist/
 .claude/.quality-pending
 
 .piglet-work/
-_tasks
