@@ -14,7 +14,7 @@ import typer
 from piglet.adapters.prompts.markdown_prompt_library import MarkdownPromptLibrary
 from piglet.app.config import Settings
 from piglet.app.container import build_chat_model, build_http_client, build_llm_http_client, start_run
-from piglet.application.tasks import run_task
+from piglet.application.tasks import TASKS, run_task
 from piglet.domain.http.request import HTTPMethod, HTTPRequest
 from piglet.domain.http.response import HTTPResponse
 from piglet.domain.llm.chat import ChatCompletion, ChatMessage, ChatRequest, Role
@@ -22,7 +22,7 @@ from piglet.errors import PigletError
 
 __all__ = ["app"]
 
-_BODY_PREVIEW_CHARACTERS = 500
+_REPLY_CHARACTERS_SHOWN = 500
 
 app = typer.Typer(help="Universal agent tooling.", no_args_is_help=True)
 http_commands = typer.Typer(help="Send requests through the resilient HTTP client.", no_args_is_help=True)
@@ -69,7 +69,7 @@ def http_get(
     typer.echo(f"run_id: {run_id}")
     typer.echo(f"status: {response.status_code}")
     typer.echo(f"bytes: {len(response.body)}")
-    typer.echo(response.text[:_BODY_PREVIEW_CHARACTERS])
+    typer.echo(response.text[:_REPLY_CHARACTERS_SHOWN])
 
 
 @llm_commands.command("ask")
@@ -97,8 +97,18 @@ def llm_ask(
     typer.echo(answer.content)
 
 
+@task_commands.command("list")
+def task_list() -> None:
+    """Print every task that can be run, and what each one does."""
+    width = max(len(task.name) for task in TASKS) + 2
+    for task in TASKS:
+        typer.echo(f"{task.name:<{width}}{task.summary}")
+
+
 @task_commands.command("run")
-def task_run(name: str) -> None:
+def task_run(
+    name: Annotated[str, typer.Argument(help="Which task to run. `piglet task list` prints the names.")],
+) -> None:
     """Run one task by name and print what the platform answered."""
     try:
         outcome = asyncio.run(run_task(name, Settings()))

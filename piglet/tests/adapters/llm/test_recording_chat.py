@@ -15,6 +15,8 @@ from piglet.domain.llm.chat import (
     ResponseSchema,
     Role,
     TokenUsage,
+    ToolCall,
+    ToolDefinition,
 )
 from piglet.errors import ModelCallFailedError, PigletError
 
@@ -158,3 +160,57 @@ async def test_an_exchange_that_could_not_be_written_says_so_in_the_log(tmp_path
     entries = read_entries(tmp_path / "logs")
     assert [entry["event"] for entry in entries] == ["llm_exchange_not_recorded"]
     assert entries[0]["level"] == "error"
+
+
+LOCATE_TOWN = ToolDefinition("locate_town", "Where a town is.", {"type": "object", "properties": {}})
+CALLED = ChatCompletion(
+    "",
+    "test/model",
+    FinishReason.TOOL_CALLS,
+    TokenUsage(11, 7),
+    tool_calls=[ToolCall("call_1", "locate_town", '{"town": "Zabrze"}')],
+)
+
+
+async def test_the_tools_the_call_offered_are_written(tmp_path: Path) -> None:
+    offered = ChatRequest([ChatMessage(Role.USER, "Where is Zabrze?")], tools=[LOCATE_TOWN])
+
+    await RecordingChatModel(ScriptedModel(CALLED), tmp_path).complete(offered)
+
+    assert written(tmp_path)[0]["tools"] == [
+        {"name": "locate_town", "description": "Where a town is.", "parameters": {"type": "object", "properties": {}}}
+    ]
+
+
+async def test_a_call_offering_no_tools_writes_none(tmp_path: Path) -> None:
+    await RecordingChatModel(ScriptedModel(ANSWER), tmp_path).complete(QUESTION)
+
+    assert written(tmp_path)[0]["tools"] is None
+
+
+async def test_the_tool_calls_the_answer_made_are_written(tmp_path: Path) -> None:
+    await RecordingChatModel(ScriptedModel(CALLED), tmp_path).complete(QUESTION)
+
+    assert written(tmp_path)[0]["answer"]["tool_calls"] == [
+        {"call_id": "call_1", "name": "locate_town", "arguments": '{"town": "Zabrze"}'}
+    ]
+
+
+async def test_a_recorded_conversation_keeps_the_calls_each_turn_made(tmp_path: Path) -> None:
+    conversation = ChatRequest(
+        [
+            ChatMessage(Role.ASSISTANT, tool_calls=[ToolCall("call_1", "locate_town", "{}")]),
+            ChatMessage(Role.TOOL, "50.3143, 18.7816", tool_call_id="call_1"),
+        ]
+    )
+
+    await RecordingChatModel(ScriptedModel(ANSWER), tmp_path).complete(conversation)
+
+    assert written(tmp_path)[0]["messages"] == [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"call_id": "call_1", "name": "locate_town", "arguments": "{}"}],
+        },
+        {"role": "tool", "content": "50.3143, 18.7816", "tool_call_id": "call_1"},
+    ]

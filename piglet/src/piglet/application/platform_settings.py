@@ -3,6 +3,8 @@
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from piglet.app.config import PROJECT_ROOT
+
 __all__ = ["PlatformSettings"]
 
 
@@ -20,7 +22,7 @@ class PlatformSettings(BaseSettings):
         base_url: Where the platform listens.
     """
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=PROJECT_ROOT / ".env", env_file_encoding="utf-8", extra="ignore")
 
     api_hub: SecretStr = SecretStr("")
     base_url: str = "https://hub.ag3nts.org"

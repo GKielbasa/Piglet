@@ -2,12 +2,19 @@
 
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from piglet.adapters.logging.setup import LogLevel
 
-__all__ = ["Settings"]
+__all__ = ["PROJECT_ROOT", "Settings"]
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+"""The directory holding `pyproject.toml`, `prompts/`, `data/` and `.env`.
+
+Found from this file's own location, so every path the program uses points at the same place
+whichever directory it was started from.
+"""
 
 
 class Settings(BaseSettings):
@@ -44,13 +51,13 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="PIGLET_",
-        env_file=".env",
+        env_file=PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     openrouter_api_key: SecretStr = SecretStr("")
-    data_dir: Path = Path("data")
+    data_dir: Path = PROJECT_ROOT / "data"
     cache_enabled: bool = True
     cache_ttl_seconds: int = 86_400
     http_timeout_seconds: float = 30.0
@@ -60,9 +67,15 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://openrouter.ai/api/v1"
     llm_timeout_seconds: float = 120.0
     llm_deadline_seconds: float = 300.0
-    prompts_dir: Path = Path("prompts")
+    prompts_dir: Path = PROJECT_ROOT / "prompts"
     record_exchanges: bool = True
     log_level: LogLevel = "info"
+
+    @field_validator("data_dir", "prompts_dir")
+    @classmethod
+    def _anchor_to_the_project(cls, value: Path) -> Path:
+        """Read a relative override as relative to the project, never to the shell's location."""
+        return value if value.is_absolute() else PROJECT_ROOT / value
 
     @property
     def cache_dir(self) -> Path:
@@ -78,3 +91,12 @@ class Settings(BaseSettings):
     def runs_dir(self) -> Path:
         """Directory holding what was said in each run, one subdirectory per run."""
         return self.data_dir / "runs"
+
+    @property
+    def answers_dir(self) -> Path:
+        """Directory holding what each finished run answered, one document per name.
+
+        Written so a later run can read it: the answer to one question is regularly the input to
+        the next, and the alternative is doing the first piece of work again to get at it.
+        """
+        return self.data_dir / "answers"

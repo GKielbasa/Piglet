@@ -17,6 +17,9 @@ from piglet.errors import HTTPError, RetryExhaustedError, TransportError, Unsafe
 
 __all__ = ["ResilientHTTPClient"]
 
+# Enough for a service's own explanation of a refusal, short of carrying an error page around.
+_BODY_PREVIEW_CHARACTERS = 500
+
 
 class ResilientHTTPClient:
     """Sends a request and keeps at it while the failure looks transient.
@@ -273,7 +276,7 @@ def _give_up(
             raise UnsafeToRepeatError(request.url, request.method, attempts) from outcome
         raise RetryExhaustedError(request.url, attempts, failure_class, give_up_reason) from outcome
     if give_up_reason is GiveUpReason.PERMANENT_FAILURE:
-        raise HTTPError(request.url, outcome.status_code, attempts)
+        raise HTTPError(request.url, outcome.status_code, attempts, outcome.text[:_BODY_PREVIEW_CHARACTERS])
     if give_up_reason is GiveUpReason.UNSAFE_TO_REPEAT:
         raise UnsafeToRepeatError(request.url, request.method, attempts, outcome.status_code)
     raise RetryExhaustedError(request.url, attempts, failure_class, give_up_reason, outcome.status_code)

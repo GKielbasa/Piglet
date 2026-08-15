@@ -13,7 +13,15 @@ from piglet.domain.http.request import HTTPMethod, HTTPRequest
 from piglet.domain.http.response import HTTPResponse
 from piglet.domain.http.retry_policy import RetryPolicy
 from piglet.domain.http.service_profile import ServiceProfile
-from piglet.domain.llm.chat import ChatMessage, ChatRequest, FinishReason, ResponseSchema, Role
+from piglet.domain.llm.chat import (
+    ChatMessage,
+    ChatRequest,
+    FinishReason,
+    ResponseSchema,
+    Role,
+    ToolCall,
+    ToolDefinition,
+)
 from piglet.errors import HTTPError, ModelAnswerTruncatedError, ModelCallFailedError, RetryExhaustedError
 
 API_KEY = SecretStr("a-key-nobody-owns")
@@ -209,7 +217,7 @@ async def test_a_missing_cost_stays_unknown() -> None:
 
 
 async def test_an_unknown_finish_reason_becomes_other() -> None:
-    _, model = build_model(answered(choices=[{"finish_reason": "tool_calls", "message": {"content": "…"}}]))
+    _, model = build_model(answered(choices=[{"finish_reason": "cable_chewed_through", "message": {"content": "…"}}]))
 
     assert (await model.complete(QUESTION)).finish_reason is FinishReason.OTHER
 
@@ -310,3 +318,141 @@ async def test_a_call_the_http_layer_gave_up_on_leaves_one_too(tmp_path: Path) -
         await model.complete(QUESTION)
 
     assert llm_entries(tmp_path)[0]["outcome"] == "http_failure"
+
+
+LOCATE_TOWN = ToolDefinition(
+    "locate_town",
+    "Where a town is, in degrees.",
+    {"type": "object", "properties": {"town": {"type": "string"}}, "required": ["town"]},
+)
+ASKED_WITH_TOOLS = ChatRequest([ChatMessage(Role.USER, "Where is Zabrze?")], tools=[LOCATE_TOWN])
+USED_A_TOOL = ChatRequest(
+    [
+        ChatMessage(Role.USER, "Where is Zabrze?"),
+        ChatMessage(Role.ASSISTANT, tool_calls=[ToolCall("call_1", "locate_town", '{"town": "Zabrze"}')]),
+        ChatMessage(Role.TOOL, "50.3143, 18.7816", tool_call_id="call_1"),
+    ]
+)
+
+
+def called(arguments: str = '{"town": "Zabrze"}') -> HTTPResponse:
+    """A completion in which the model reached for a tool instead of answering."""
+    return answered(
+        choices=[
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "locate_town", "arguments": arguments},
+                        }
+                    ],
+                },
+            }
+        ]
+    )
+
+
+async def test_a_request_with_no_tools_sends_no_tools_field() -> None:
+    transport, model = build_model(answered())
+
+    await model.complete(QUESTION)
+
+    assert "tools" not in body_of(transport)
+
+
+async def test_a_tool_definition_is_sent_in_the_shape_the_endpoint_documents() -> None:
+    transport, model = build_model(called())
+
+    await model.complete(ASKED_WITH_TOOLS)
+
+    assert body_of(transport)["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "locate_town",
+                "description": "Where a town is, in degrees.",
+                "strict": True,
+                "parameters": {"type": "object", "properties": {"town": {"type": "string"}}, "required": ["town"]},
+            },
+        }
+    ]
+
+
+async def test_a_request_carrying_tools_asks_for_a_provider_that_supports_them() -> None:
+    transport, model = build_model(called())
+
+    await model.complete(ASKED_WITH_TOOLS)
+
+    assert body_of(transport)["provider"] == {"require_parameters": True}
+
+
+async def test_an_assistant_turn_that_called_tools_is_sent_back_with_those_calls() -> None:
+    transport, model = build_model(answered())
+
+    await model.complete(USED_A_TOOL)
+
+    assert body_of(transport)["messages"][1] == {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "locate_town", "arguments": '{"town": "Zabrze"}'},
+            }
+        ],
+    }
+
+
+async def test_a_tool_result_is_sent_as_its_own_message_naming_the_call() -> None:
+    transport, model = build_model(answered())
+
+    await model.complete(USED_A_TOOL)
+
+    assert body_of(transport)["messages"][2] == {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": "50.3143, 18.7816",
+    }
+
+
+async def test_an_answer_that_calls_a_tool_is_read_as_a_tool_call_not_as_a_failure() -> None:
+    _, model = build_model(called())
+
+    answer = await model.complete(ASKED_WITH_TOOLS)
+
+    assert answer.content == ""
+    assert [(call.call_id, call.name) for call in answer.tool_calls] == [("call_1", "locate_town")]
+
+
+async def test_the_finish_reason_tool_calls_is_understood() -> None:
+    _, model = build_model(called())
+
+    assert (await model.complete(ASKED_WITH_TOOLS)).finish_reason is FinishReason.TOOL_CALLS
+
+
+async def test_an_answer_with_neither_text_nor_tool_calls_is_still_a_failure() -> None:
+    _, model = build_model(answered(choices=[{"finish_reason": "stop", "message": {"content": None}}]))
+
+    with pytest.raises(ModelCallFailedError, match="no text at all"):
+        await model.complete(QUESTION)
+
+
+async def test_a_refusal_is_still_a_refusal() -> None:
+    refused = {"finish_reason": "stop", "message": {"content": None, "refusal": "I will not."}}
+    _, model = build_model(answered(choices=[refused]))
+
+    with pytest.raises(ModelCallFailedError, match=r"declined to answer: I will not\."):
+        await model.complete(QUESTION)
+
+
+async def test_the_argument_text_is_handed_on_exactly_as_it_arrived() -> None:
+    ragged = '{"town":   "Żarnowiec"  ,\n  "hint": "the one with the reactor"}'
+    _, model = build_model(called(arguments=ragged))
+
+    assert (await model.complete(ASKED_WITH_TOOLS)).tool_calls[0].arguments == ragged

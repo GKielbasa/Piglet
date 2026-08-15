@@ -12,7 +12,15 @@ from structlog.typing import FilteringBoundLogger
 from piglet.adapters.http.resilient_client import ResilientHTTPClient
 from piglet.domain.http.request import HTTPMethod, HTTPRequest
 from piglet.domain.http.response import HTTPResponse
-from piglet.domain.llm.chat import ChatCompletion, ChatRequest, FinishReason, TokenUsage
+from piglet.domain.llm.chat import (
+    ChatCompletion,
+    ChatMessage,
+    ChatRequest,
+    FinishReason,
+    Role,
+    TokenUsage,
+    ToolCall,
+)
 from piglet.errors import ModelAnswerTruncatedError, ModelCallFailedError, RetryExhaustedError
 
 __all__ = ["OpenRouterChatModel"]
@@ -29,15 +37,35 @@ class _Outcome(StrEnum):
     HTTP_FAILURE = "http_failure"
 
 
+class _WireFunction(BaseModel):
+    """Which tool the model asked for, and with what."""
+
+    name: str = ""
+    arguments: str = ""
+
+
+class _WireToolCall(BaseModel):
+    """One tool call as the endpoint returns it.
+
+    The identifier is read through an alias because the field is spelt `id` on the wire, and a
+    name that shadows a builtin is one this project does not write.
+    """
+
+    call_id: str = Field("", alias="id")
+    function: _WireFunction = Field(default_factory=_WireFunction)
+
+
 class _WireMessage(BaseModel):
     """One message as the endpoint returns it.
 
-    `content` and `refusal` are both optional and exactly one of them arrives: a model that
-    declines to answer says so in `refusal` and leaves `content` null.
+    `content` and `refusal` are both optional and one of them arrives when the model produced
+    prose: a model that declines to answer says so in `refusal` and leaves `content` null. A
+    model that reached for a tool instead leaves both null and fills `tool_calls`.
     """
 
     content: str | None = None
     refusal: str | None = None
+    tool_calls: list[_WireToolCall] = Field(default_factory=list[_WireToolCall])
 
 
 class _WireChoice(BaseModel):
@@ -241,7 +269,7 @@ def _build_body(request: ChatRequest, model: str) -> dict[str, Any]:
     """
     body: dict[str, Any] = {
         "model": model,
-        "messages": [{"role": message.role.value, "content": message.content} for message in request.messages],
+        "messages": [_message_body(message) for message in request.messages],
     }
     if request.response_schema is not None:
         body["response_format"] = {
@@ -252,14 +280,60 @@ def _build_body(request: ChatRequest, model: str) -> dict[str, Any]:
                 "schema": request.response_schema.json_schema,
             },
         }
-        # Support for enforced schemas differs between the models behind this one endpoint.
-        # Without this, a call can be routed to one that ignores the schema and answers prose.
+    if request.tools:
+        # `strict` for the same reason `response_format` sets it above: without it the schema
+        # travels as documentation, and arguments that do not fit come back anyway — a turn
+        # spent on a correction the provider was asked to make unnecessary.
+        body["tools"] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "strict": True,
+                    "parameters": tool.parameters,
+                },
+            }
+            for tool in request.tools
+        ]
+    if request.response_schema is not None or request.tools:
+        # Support for enforced schemas, and for tool calling, differs between the models behind
+        # this one endpoint. Without this a call can be routed to one that ignores either and
+        # answers prose — which for a tool call means an agent loop that never turns.
         body["provider"] = {"require_parameters": True}
     if request.temperature is not None:
         body["temperature"] = request.temperature
     if request.max_output_tokens is not None:
         body["max_tokens"] = request.max_output_tokens
     return body
+
+
+def _message_body(message: ChatMessage) -> dict[str, Any]:
+    """Compose one message in the shape the endpoint reads.
+
+    Three shapes, because a conversation that used tools is no longer only text: the result of
+    a tool quotes the call it answers, and the turn that asked carries the calls in place of
+    content. Sending such a turn back is not optional — the provider is stateless, so a call it
+    made is only in the conversation if we put it there.
+
+    Args:
+        message: The turn to send.
+
+    Returns:
+        The message as one JSON object.
+    """
+    if message.role is Role.TOOL:
+        return {"role": message.role.value, "tool_call_id": message.tool_call_id, "content": message.content}
+    if message.tool_calls:
+        return {
+            "role": message.role.value,
+            "content": message.content or None,
+            "tool_calls": [
+                {"id": call.call_id, "type": "function", "function": {"name": call.name, "arguments": call.arguments}}
+                for call in message.tool_calls
+            ],
+        }
+    return {"role": message.role.value, "content": message.content}
 
 
 def _parse(response: HTTPResponse, model: str) -> _WireAnswer:
@@ -313,7 +387,7 @@ def _read_answer(answer: _WireAnswer, model: str, usage: TokenUsage, max_output_
 
     Raises:
         ModelCallFailedError: If the body reports a failure, does not hold exactly one choice,
-            or holds one carrying no text.
+            or holds one carrying neither text nor a tool call.
         ModelAnswerTruncatedError: If generation stopped at the token ceiling.
     """
     if answer.error is not None:
@@ -326,12 +400,27 @@ def _read_answer(answer: _WireAnswer, model: str, usage: TokenUsage, max_output_
     finish_reason = _finish_reason(choice.finish_reason)
     if finish_reason is FinishReason.LENGTH:
         raise ModelAnswerTruncatedError(answered_by, usage, max_output_tokens)
-    if choice.message.content is None:
+    tool_calls = _tool_calls_of(choice.message)
+    if choice.message.content is None and not tool_calls:
         # Letting this become an empty answer is the expensive reading of it: the call was
         # billed, the caller receives a blank string, and a schema asked for further up then
         # takes the blame for text that was never produced.
         raise ModelCallFailedError(answered_by, _why_there_is_no_text(choice.message))
-    return ChatCompletion(choice.message.content, answered_by, finish_reason, usage)
+    return ChatCompletion(choice.message.content or "", answered_by, finish_reason, usage, tool_calls)
+
+
+def _tool_calls_of(message: _WireMessage) -> tuple[ToolCall, ...]:
+    """Read the tools the model asked for.
+
+    Args:
+        message: The message as the endpoint returned it.
+
+    Returns:
+        One value per call, the argument text exactly as it arrived. Nothing is parsed here:
+        whoever owns the schema those arguments were written against is the only party able to
+        say whether they honour it.
+    """
+    return tuple(ToolCall(call.call_id, call.function.name, call.function.arguments) for call in message.tool_calls)
 
 
 def _why_there_is_no_text(message: _WireMessage) -> str:

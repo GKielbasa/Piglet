@@ -20,6 +20,14 @@ jeden temat. Trzy działy: język, agenci, warsztat.
 | Plik | Temat |
 |---|---|
 | [s01e01-programowanieInterakcji.md](agents/s01e01-programowanieInterakcji.md) | tokeny i autoregresja, Structured Outputs, wybór modelu, organizacja promptów |
+| [s01e02-laczenieModeluZNarzedziami.md](agents/s01e02-laczenieModeluZNarzedziami.md) | Function Calling, projektowanie narzędzi, workflow vs agent, prompt cache, prompt injection |
+
+### `agents/skills/` — umiejętności, spisane po zbudowaniu
+
+| Plik | Temat |
+|---|---|
+| [taxonomyClassification.md](agents/skills/taxonomyClassification.md) | klasyfikacja prozy do zamkniętej taksonomii: kiedy model, anatomia, ewaluacja |
+| [supervisedAgentLoop.md](agents/skills/supervisedAgentLoop.md) | pętla agenta pod nadzorem: co decyduje model, trzy rodzaje strażnika, budżet, wyciek do kontekstu |
 
 ## `workflow/` — warsztat: harness, hooki, proces
 

@@ -52,7 +52,44 @@ class PlatformClient:
         response = await self.http_client.send(HTTPRequest(HTTPMethod.GET, address), should_cache=True)
         return response.text
 
-    async def submit(self, task: str, answer: Sequence[BaseModel]) -> str:
+    async def ask(self, endpoint: str, question: BaseModel) -> str:
+        """Put a question to one of the platform's API endpoints.
+
+        Our key joins the question here rather than at the call site, for the same reason it
+        does in the two methods around this one: a caller that has to remember to add a
+        credential is a caller that will one day forget.
+
+        Not cached. These endpoints answer about people rather than about files, and an answer
+        remembered for a day would outlive the question that is actually being asked.
+
+        Args:
+            endpoint: The endpoint's name under `/api/`.
+            question: What to ask, without the key. A model rather than a mapping, so the
+                platform's own spelling of a field lives in a `serialization_alias` beside
+                every other wire name instead of in a dictionary literal at the call site.
+
+        Returns:
+            The answer as text, for the caller to read into a shape of its own.
+
+        Raises:
+            HTTPError: If the platform refuses. Its own explanation is on `body_preview`, which
+                is the only place the reason for a refusal survives.
+            RetryExhaustedError: If it kept failing until a budget ran out.
+        """
+        request = HTTPRequest(
+            HTTPMethod.POST,
+            f"{self.base_url}/api/{endpoint}",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps(
+                {"apikey": self.api_key.get_secret_value(), **question.model_dump(mode="json", by_alias=True)},
+                ensure_ascii=False,
+            ).encode(),
+        )
+        # Asking twice is asking the same question twice: these endpoints report, they do not
+        # change anything, and RFC 9110 has no way of knowing that about a POST.
+        return (await self.http_client.send(request, is_safe_to_repeat=True)).text
+
+    async def submit(self, task: str, answer: BaseModel | Sequence[BaseModel]) -> str:
         """Send an answer, and hand back what the platform said about it.
 
         Not cached and not repeated: submitting twice is a second attempt at a task, not the
@@ -60,7 +97,9 @@ class PlatformClient:
 
         Args:
             task: The task's name on the platform.
-            answer: What we found, one model per record.
+            answer: What we found — a list of records, or a single object where the task asks
+                for one. The distinction is the platform's and is carried through unchanged: a
+                task expecting one object rejects a list of one.
 
         Returns:
             The platform's reply, verbatim. What marks the task as solved is in there.
@@ -73,7 +112,7 @@ class PlatformClient:
         payload = {
             "apikey": self.api_key.get_secret_value(),
             "task": task,
-            "answer": [item.model_dump(mode="json") for item in answer],
+            "answer": _as_json(answer),
         }
         request = HTTPRequest(
             HTTPMethod.POST,
@@ -82,3 +121,21 @@ class PlatformClient:
             body=json.dumps(payload, ensure_ascii=False).encode(),
         )
         return (await self.http_client.send(request)).text
+
+
+def _as_json(answer: BaseModel | Sequence[BaseModel]) -> object:
+    """Turn what a task found into the shape its `answer` field takes.
+
+    Aliases are honoured, because the platform's field names are not ours: a model spelling a
+    field `access_level` sends it as `accessLevel` when it declares that alias, and PEP 8 does
+    not have to lose to a wire format.
+
+    Args:
+        answer: One record or several.
+
+    Returns:
+        A JSON object for one, a JSON array for several.
+    """
+    if isinstance(answer, BaseModel):
+        return answer.model_dump(mode="json", by_alias=True)
+    return [item.model_dump(mode="json", by_alias=True) for item in answer]

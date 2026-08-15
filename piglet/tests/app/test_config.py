@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr
 
-from piglet.app.config import Settings
+from piglet.app.config import PROJECT_ROOT, Settings
 
 
 def test_secrets_are_secretstr_and_do_not_leak_in_repr() -> None:
@@ -19,8 +19,22 @@ def test_defaults_are_safe() -> None:
     settings = Settings()
 
     assert settings.cache_enabled is True
-    assert settings.cache_dir == Path("data") / "cache"
-    assert settings.log_dir == Path("data") / "logs"
+    assert settings.cache_dir == PROJECT_ROOT / "data" / "cache"
+    assert settings.log_dir == PROJECT_ROOT / "data" / "logs"
+
+
+def test_paths_do_not_move_with_the_working_directory() -> None:
+    # The autouse fixture has already put this test in an empty directory of its own.
+    assert Settings().prompts_dir == PROJECT_ROOT / "prompts"
+    assert Settings().data_dir == PROJECT_ROOT / "data"
+
+
+def test_a_relative_override_is_read_as_relative_to_the_project() -> None:
+    assert Settings(prompts_dir=Path("instructions")).prompts_dir == PROJECT_ROOT / "instructions"
+
+
+def test_an_absolute_override_is_taken_as_given() -> None:
+    assert Settings(prompts_dir=Path("/srv/instructions")).prompts_dir == Path("/srv/instructions")
 
 
 def test_the_http_deadline_has_a_default() -> None:

@@ -14,7 +14,7 @@ from piglet.domain.llm.prompt import Prompt
 from piglet.domain.ports import ChatModel
 from piglet.llm.classification import classify_in_batches
 
-__all__ = ["TASK_NAME", "Person", "solve"]
+__all__ = ["TASK_NAME", "Person", "find", "solve"]
 
 TASK_NAME = "people"
 DATA_FILE = "people.csv"
@@ -157,6 +157,26 @@ async def solve(chat_model: ChatModel, platform: PlatformClient, instruction: Pr
     Returns:
         What was submitted, and what the platform answered.
     """
+    answer = await find(chat_model, platform, instruction)
+    return answer, await platform.submit(TASK_NAME, answer)
+
+
+async def find(chat_model: ChatModel, platform: PlatformClient, instruction: Prompt) -> list[Person]:
+    """Work out who this task is asking for, without submitting anything.
+
+    Separate from `solve` so that finding and submitting are two things rather than one. Nothing
+    else calls it yet — the task that consumes this list reads what `solve` wrote to disk — so
+    the split earns its place by keeping the submission out of the part worth re-running, and
+    not by a second caller.
+
+    Args:
+        chat_model: Who judges the job descriptions.
+        platform: Where the file comes from.
+        instruction: What classifying means, as a prompt.
+
+    Returns:
+        The people who meet every criterion, in the order the file listed them.
+    """
     candidates = select_candidates(read_records(await platform.download(DATA_FILE)))
     verdicts = await classify_in_batches(chat_model, [record.job for record in candidates], JobVerdict, instruction)
     answer = [
@@ -171,4 +191,4 @@ async def solve(chat_model: ChatModel, platform: PlatformClient, instruction: Pr
         for record, verdict in zip(candidates, verdicts, strict=True)
         if Tag.TRANSPORT in verdict.tags
     ]
-    return answer, await platform.submit(TASK_NAME, answer)
+    return answer

@@ -1,0 +1,41 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "piglet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/piglet/.venv/bin/piglet",
+            "args": ["task", "run", "findhim"],
+            "cwd": "${workspaceFolder}/piglet",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "attach",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": { "host": "localhost", "port": 5678 },
+            "justMyCode": true
+        },
+        {
+            "name": "current file",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "${workspaceFolder}/piglet",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "pytest: current file",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["-q", "${file}"],
+            "cwd": "${workspaceFolder}/piglet",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

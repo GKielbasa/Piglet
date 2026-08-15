@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from piglet.domain.llm.chat import TokenUsage
 
 __all__ = [
+    "AgentProducedNoAnswerError",
     "HTTPError",
     "InvalidRequestError",
     "MalformedPromptError",
@@ -35,6 +36,7 @@ __all__ = [
     "PromptNotFoundError",
     "RetryExhaustedError",
     "SchemaViolationError",
+    "ToolFailedError",
     "TransportError",
     "UnsafeToRepeatError",
 ]
@@ -87,13 +89,18 @@ class HTTPError(PigletError):
         attempts: How many attempts were made before this answer arrived. Required
             rather than defaulted: a permanent status can follow several transient
             ones, and a caller reading `1` where 3 happened is misled about the cost.
+        body_preview: The beginning of what the service said, or None where nothing
+            was kept. A status names a category; the body names the cause, and a
+            caller that has to explain the failure to somebody else — a person, or a
+            model deciding what to try next — has only this to explain it with.
     """
 
-    def __init__(self, url: str, status_code: int, attempts: int) -> None:
+    def __init__(self, url: str, status_code: int, attempts: int, body_preview: str | None = None) -> None:
         super().__init__(f"{url} answered with status {status_code} after {attempts} attempt(s)")
         self.url = url
         self.status_code = status_code
         self.attempts = attempts
+        self.body_preview = body_preview
 
 
 class RetryExhaustedError(PigletError):
@@ -228,6 +235,56 @@ class SchemaViolationError(ModelError):
         self.answer_preview = answer_preview
 
 
+class ToolFailedError(PigletError):
+    """A tool could not do what it was asked, in a way the model can act on.
+
+    Raised by the tool itself rather than by the machinery around it, because only the tool
+    knows what a failure means. A person who is not on a list, an argument outside a permitted
+    range, a resource that does not exist — the model can try something else. A dead network
+    cannot be reasoned around, so a tool does not catch that, and it travels past the registry
+    and stops the run.
+
+    The message is the one the model will read, so it is written for the model: what went
+    wrong, and what to do about it.
+
+    Attributes:
+        advice: What the model is told. Not a diagnosis for a maintainer.
+    """
+
+    def __init__(self, advice: str) -> None:
+        super().__init__(advice)
+        self.advice = advice
+
+
+class AgentProducedNoAnswerError(PigletError):
+    """A loop finished without ever recording the answer it was asked for.
+
+    The alternative — reading an answer out of whatever prose the model stopped on — is a second
+    route to a submission nobody checked, so this is a failure rather than a fallback.
+
+    Attributes:
+        stop_reason: What ended the loop, in its own words.
+        steps_taken: How many times the model was asked before it stopped.
+        run_id: Which run to read back. The exchanges are on disk under it, and they are the
+            only place that says what the model was actually doing instead.
+        account: What the model said about finding nothing, where it said anything. Concluding
+            that there is no answer is a real conclusion and a different event from wandering
+            off or running out of steps, so a caller is not told the same sentence for both.
+    """
+
+    def __init__(self, stop_reason: str, steps_taken: int, run_id: str, account: str | None = None) -> None:
+        what_happened = (
+            f"concluded there is no answer: {account}"
+            if account is not None
+            else f"stopped ({stop_reason}) without recording an answer"
+        )
+        super().__init__(f"after {steps_taken} step(s) the agent {what_happened}; what it said is under run {run_id}")
+        self.stop_reason = stop_reason
+        self.steps_taken = steps_taken
+        self.run_id = run_id
+        self.account = account
+
+
 class PromptNotFoundError(PigletError):
     """Nothing on disk answers to that prompt name.
 
@@ -237,7 +294,7 @@ class PromptNotFoundError(PigletError):
     """
 
     def __init__(self, name: str, directory: Path) -> None:
-        super().__init__(f"no prompt named {name!r} in {directory}")
+        super().__init__(f"no prompt named {name!r} in {directory.resolve()}")
         self.name = name
         self.directory = directory
 

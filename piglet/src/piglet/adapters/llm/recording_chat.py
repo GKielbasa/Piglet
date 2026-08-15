@@ -1,6 +1,7 @@
 """Every exchange with a model, written down where it can be read back."""
 
 import json
+from dataclasses import asdict
 from itertools import count
 from pathlib import Path
 from typing import Any
@@ -8,11 +9,13 @@ from typing import Any
 import structlog
 from structlog.typing import FilteringBoundLogger
 
-from piglet.domain.llm.chat import ChatCompletion, ChatRequest
+from piglet.domain.llm.chat import ChatCompletion, ChatMessage, ChatRequest
 from piglet.domain.ports import ChatModel
 from piglet.errors import PigletError
 
 __all__ = ["RecordingChatModel"]
+
+_TOOL_FIELDS = frozenset({"tool_calls", "tool_call_id"})
 
 
 class RecordingChatModel:
@@ -92,7 +95,8 @@ class RecordingChatModel:
             "model": request.model,
             "temperature": request.temperature,
             "max_output_tokens": request.max_output_tokens,
-            "messages": [{"role": message.role.value, "content": message.content} for message in request.messages],
+            "messages": [_describe_message(message) for message in request.messages],
+            "tools": _describe_tools(request),
             "response_schema": _describe_schema(request),
             "answer": _describe_answer(answer),
             "failure": None if failure is None else {"type": type(failure).__name__, "message": str(failure)},
@@ -104,6 +108,48 @@ class RecordingChatModel:
             self.logger.error("llm_exchange_not_recorded", path=str(path), reason=str(unwritable))
             return
         self.logger.info("llm_exchange_recorded", path=str(path), prompt_name=request.prompt_name)
+
+
+def _describe_message(message: ChatMessage) -> dict[str, Any]:
+    """Describe one turn of the conversation that was sent.
+
+    Args:
+        message: The turn to describe.
+
+    Returns:
+        The turn, its tool calls flattened with it.
+    """
+    return _without_the_empty_tool_fields(asdict(message))
+
+
+def _describe_tools(request: ChatRequest) -> list[dict[str, Any]] | None:
+    """Describe what the model was allowed to reach for.
+
+    Recorded in full rather than by name. A description is read by the model as part of the
+    instruction, so an answer cannot be judged later against a definition nobody wrote down.
+
+    Args:
+        request: What was asked.
+
+    Returns:
+        One entry per tool, or None when the call offered none.
+    """
+    if not request.tools:
+        return None
+    return [asdict(tool) for tool in request.tools]
+
+
+def _without_the_empty_tool_fields(described: dict[str, Any]) -> dict[str, Any]:
+    """Drop the tool fields of anything that used no tools.
+
+    Args:
+        described: One value as `asdict` rendered it.
+
+    Returns:
+        The same, minus the tool fields that carry nothing — so a conversation that used no
+        tools is recorded exactly as it was before this library could offer any.
+    """
+    return {name: value for name, value in described.items() if name not in _TOOL_FIELDS or value}
 
 
 def _describe_schema(request: ChatRequest) -> dict[str, Any] | None:
@@ -127,17 +173,9 @@ def _describe_answer(answer: ChatCompletion | None) -> dict[str, Any] | None:
         answer: What came back, or None when nothing did.
 
     Returns:
-        The answer with what it cost, or None when the call failed.
+        The answer with what it cost, or None when the call failed. `tool_calls` is absent
+        unless the model made some, for the reason given on `_describe_message`.
     """
     if answer is None:
         return None
-    return {
-        "content": answer.content,
-        "model": answer.model,
-        "finish_reason": answer.finish_reason.value,
-        "usage": {
-            "prompt_tokens": answer.usage.prompt_tokens,
-            "completion_tokens": answer.usage.completion_tokens,
-            "cost_usd": answer.usage.cost_usd,
-        },
-    }
+    return _without_the_empty_tool_fields(asdict(answer))

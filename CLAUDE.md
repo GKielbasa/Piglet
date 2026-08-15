@@ -13,6 +13,14 @@ Two directories are exempt, and both on purpose:
   that costs effort to read is a note that does not get reread, and an unread note teaches
   nothing. Everything under `piglet/` — code and `docs/` alike — stays English.
 
+  **It is also the agent's source of practice, and it is read before a plan is written, not
+  after.** Every earlier sentence about this directory says how to *write* to it, which once
+  produced exactly what that reads like: a plan for a lesson on building agents that broke three
+  rules from the notes of the two lessons it was built on — one of them from a note that was
+  open in context the whole time. The notes accumulate, so the relevant ones are **every**
+  `_knowledgeBase/agents/` note up to the current lesson, not only the current one: a rule about
+  field order in a schema, written in the first lesson, governs every schema written after it.
+
 ---
 
 ## 0. Overriding context
@@ -194,7 +202,33 @@ the problem to fit the tool instead of the other way round.
 - the list of files to be created or changed,
 - steps in `step → definition of done` form (see below),
 - risks and uncertain areas,
-- an explicit **"what I am deliberately not doing"** — scope left outside on purpose.
+- an explicit **"what I am deliberately not doing"** — scope left outside on purpose,
+- **a conformance section** — see below.
+
+### Conformance to the practices already written down
+
+Every design decision that touches a practice from `_knowledgeBase/agents/` cites the note and
+the section it follows, or says plainly that it departs from it and why. Written **before the
+author accepts the plan**, and before any assertion is accepted — a rule missed at this point
+becomes an accepted assertion, then a test, and from then on the mistake defends itself.
+
+**The lesson's own reference implementation is the second source, read the same way.** Before
+planning a lesson, open the matching directory under `_exampleCode/4th-devs/` (section 14) and
+say in the conformance section what it does, what is worth taking, and what we are doing
+differently on purpose. It is working code written by the course author, so the burden of proof
+sits on the departure, not on the borrowing — "we designed it ourselves" is not a reason, it is
+the thing being questioned. This is not permission to transliterate: section 14's rule stands,
+we write our own Python, and a decision to ignore the example entirely is fine once it is a
+decision rather than an oversight.
+
+The five steps above derive a design from the problem. None of them asks whether the result
+agrees with what the lessons already taught, which is why that question needs its own place on
+this list rather than trusting it to happen: the first plan written without it broke three rules
+from notes that were sitting on disk, and a full round of adversarial questioning missed all
+three, because those questions came from the design rather than from the source.
+
+A departure is a legitimate answer and often the right one — the practices are advice, not a
+specification. Naming it is what is not optional.
 
 ### Definition of done
 
@@ -587,6 +621,13 @@ there.
 implementation in Python, often against a different endpoint (the course uses the
 Responses API; we use Chat Completions through OpenRouter). Rewriting from TS to Python is
 part of the learning: it forces understanding, which copying does not.
+
+**"Not to copy" has never meant "not to read", and it was taken that way once.** S01E02 shipped a
+tool registry and an agent loop without anyone opening `01_02_tool_use/`, which holds the course
+author's own `src/tools/definitions.js`, `src/executor.js` and a 281-line `TOOLS.md` on exactly
+that subject. Nothing was wrong with the result and that is beside the point: the choice was
+never made. The directory for the lesson at hand is read before the plan, and section 5a says
+what the plan then has to record about it.
 
 Usefulness ranking, best first:
 
